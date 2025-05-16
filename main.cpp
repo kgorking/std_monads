@@ -1,6 +1,7 @@
 import monads;
 import std;
 
+
 int main()
 {
 	std::vector<int> v = { 1, 2, 3, 4, 5 };
@@ -11,12 +12,17 @@ int main()
 	auto m = monad(v)
 		.transform(add_three)
 		.transform(mul_two)
-		.to<std::vector<int>>();
+		.view();
 	std::println("{}", m);
 
-	//auto v2 = monad(v)
-	//	.transform([](int v) { return v + 3; })
-	//	.to<std::vector>();
+	auto test{ m };
+
+	auto m2 = monad(std::move(v))
+		.transform(add_three)
+		.transform(mul_two)
+		;
+	std::println("{}", m2.view());
+
 
 	return 0;
 }
