@@ -11,17 +11,14 @@ int main()
 
 	auto m = monad(v)
 		.transform(add_three)
-		.transform(mul_two)
-		.view();
-	std::println("{}", m);
-
-	auto test{ m };
+		.transform(mul_two);
+	std::println("{} ", m);
 
 	auto m2 = monad(std::move(v))
 		.transform(add_three)
 		.transform(mul_two)
 		;
-	std::println("{}", m2.view());
+	std::println("{}", m2);
 
 
 	return 0;

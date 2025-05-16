@@ -1,16 +1,20 @@
 ﻿export module monads;
 import std;
 
-
 export
 template<typename V>
-struct monad {
+struct monad : std::ranges::view_interface<monad<V>> {
 	monad() = delete;
-	template<typename T> monad(monad<T> const&) = delete;
 
-	explicit monad(std::ranges::view auto const& view) noexcept : view_(view) {}
-	template<std::ranges::range R> explicit monad(R const& cont) noexcept : view_(cont) {}
-	template<std::ranges::range R> explicit monad(R     && cont) noexcept : view_(std::forward<R>(cont)) {}
+	monad(monad const& m) : view_(m.view_) {}
+	monad(monad     && m) : view_(std::forward<V>(m.view_)) {}
+
+	//explicit monad(std::ranges::view auto const& view) noexcept : view_(view) {}
+	template<std::ranges::range R> requires !requires(R r) { r.view_; }
+	explicit monad(R const& cont) noexcept : view_(cont) {}
+	
+	template<std::ranges::range R> requires !requires(R r) { r.view_; }
+	explicit monad(R     && cont) noexcept : view_(std::forward<R>(cont)) {}
 
 
 	template<typename Fn>
@@ -24,21 +28,24 @@ struct monad {
 		return std::ranges::to<To>(view_);
 	}
 
-	template<typename To>
-	auto to() const {
-		return std::ranges::to<To>(view_);
-	}
+	//template<typename To>
+	//auto to() const {
+	//	return std::ranges::to<To>(view_);
+	//}
+
+	auto begin() const { return view_.begin(); }
+	auto end() const { return view_.end(); }
 
 	// can not call view() on temporaries
-	decltype(auto) view() && = delete;// ("can not call view() on temporaries");
-
-	decltype(auto) view() & {
-		return std::ranges::ref_view(view_);
-	}
+	//decltype(auto) view() && = delete;// ("can not call view() on temporaries");
+	//
+	//decltype(auto) view() & {
+	//	return std::ranges::ref_view(view_);
+	//}
 
 private:
 	V view_;
 };
 
-template<std::ranges::range R> monad(R const& r) -> monad<std::ranges::ref_view<R>>;
-template<std::ranges::range R> monad(R     && r) -> monad<std::ranges::owning_view<R>>;
+template<std::ranges::range R> monad(R const&) -> monad<std::ranges::ref_view<R>>;
+template<std::ranges::range R> monad(R     &&) -> monad<std::ranges::owning_view<R>>;
