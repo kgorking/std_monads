@@ -8,11 +8,11 @@ int main()
 	auto add_three = [](int v) { return v + 3; };
 	auto mul_two = [](int v) { return v * 2; };
 
-	std::println("{}",
-		monad(v)
+	auto m = monad(v)
 		.transform(add_three)
 		.transform(mul_two)
-		.to<std::vector<int>>());
+		.to<std::vector<int>>();
+	std::println("{}", m);
 
 	//auto v2 = monad(v)
 	//	.transform([](int v) { return v + 3; })

@@ -2,13 +2,14 @@
 import std;
 
 export
-template<typename T, std::ranges::viewable_range V>
+template<typename T, std::ranges::viewable_range V = decltype(std::views::all)>
 struct monad {
-	explicit monad(T& cont) noexcept : cont_(&cont) {}
+	explicit monad(T& cont, V view = {}) noexcept : cont_(&cont), view_(view) {}
 
 	auto transform(auto&& fn) const {
-		auto xform = (*cont_) | std::views::transform(std::forward<decltype(fn)>(fn));
-		return monad<decltype(xform)>(xform);
+		return monad(
+			(*cont_) | std::views::transform(std::forward<decltype(fn)>(fn))
+		);
 	}
 
 	template<typename To>
@@ -18,4 +19,5 @@ struct monad {
 
 private:
 	T* cont_;
+	V view_;
 };
