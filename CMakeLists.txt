@@ -9,10 +9,10 @@ project ("std_monads" LANGUAGES CXX)
 
 set(CMAKE_CXX_MODULE_STD 1)
 
-add_executable (std_monads)
-target_compile_features(std_monads PRIVATE cxx_std_23)
-target_sources(std_monads PUBLIC "main.cpp" )
-target_sources(std_monads PUBLIC FILE_SET CXX_MODULES FILES "monad.cppm")
+add_executable (monad)
+target_compile_features(monad PRIVATE cxx_std_23)
+target_sources(monad PUBLIC "main.cpp" )
+target_sources(monad PUBLIC FILE_SET CXX_MODULES FILES "monad.cppm")
 
 add_library(unittest)
 target_compile_features(unittest PRIVATE cxx_std_23)

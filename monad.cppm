@@ -8,11 +8,12 @@ concept mutable_monad = !std::is_const_v<std::remove_reference_t<T>>;
 export template<typename V>
 class monad : public std::ranges::view_interface<monad<V>> {
 	V view_;
-	using Base = std::remove_reference_t<decltype(*view_.begin())>;
+	using Base = std::remove_reference_t<decltype(*std::ranges::begin(view_))>;
 
 public:
 	monad() = delete;
 
+	// NOTE: this makes a copy of the initializer list
 	template<typename T>
 	constexpr monad(std::initializer_list<T> il) : view_(il) {}
 
@@ -20,8 +21,8 @@ public:
 	explicit constexpr monad(R&& cont) noexcept : view_(std::forward<R>(cont)) {}
 
 
-	constexpr auto begin() { return view_.begin(); }
-	constexpr auto end()   { return view_.end(); }
+	constexpr auto begin() { return std::ranges::begin(view_); }
+	constexpr auto end()   { return std::ranges::end(view_); }
 
 	constexpr auto as_rvalue() {
 		return ::monad(
