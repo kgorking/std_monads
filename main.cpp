@@ -13,18 +13,18 @@ int main()
 	std::println("monad: {} ", monad(v));
 
 	{
-		std::println("transform x2 +3: {} ",
-			monad(v).transform(mul_two).transform(add_three)
+		std::println("\ntransform x2: {} ",
+			monad(v).transform(mul_two)
 		);
 	}
 
 	{
-		std::println("filter odd: {} ",
+		std::println("\nfilter odd: {} ",
 			monad(v).filter(is_odd));
 	}
 
 	{
-		std::println("drop 2: {}",
+		std::println("\ndrop 2: {}",
 			monad(v).drop(2));
 	}
 
@@ -36,36 +36,36 @@ int main()
 			.join() // join vector
 			//.join()
 		;
-		std::println("join {} and {}: {:s}", v2, v3, joiner);
+		std::println("\njoin {} and {}: {:?s}", v2, v3, joiner);
 	}
 
 	{
-		std::println("splits: {}",
-			monad(std::array{ '0',  '1',  '0',  '2','3',  '0',  '4','5','6' }).split('0'));
+		auto const arr = std::string_view{ "hello, monad" };
+		std::println("\nsplit {:?} on 'o': {}", arr, monad(arr).split('o'));
 	}
 
 	{
-		std::println("enumerate: {}",
-			monad(std::array{ 'A', 'B', 'C', 'D', 'E' }).enumerate());
+		auto const arr = std::array{ 'A', 'B', 'C', 'D', 'E' };
+		std::println("\nenumerate on {}: {}", arr, monad(arr).enumerate());
 	}
 
 	{
-		std::println("zip: {}",
-			monad(std::array{ 'A', 'B', 'C', 'D', 'E' }).zip(v));
+		auto const arr = std::array{ 'A', 'B', 'C', 'D', 'E' };
+		std::println("\nzip {} and {}: {}", arr, v, monad(arr).zip(v));
 	}
 
 	{
-		std::println("adjacent: {}",
+		std::println("\nadjacent: {}",
 			monad(v).adjacent<3>());
 	}
 
 	{
-		std::println("chunk_by: {}",
+		std::println("\nchunk_by: {}",
 			monad(v).chunk_by(std::ranges::less{}));
 	}
 
 	{
-		std::println("cartesian_product: {}",
+		std::println("\ncartesian_product: {}",
 			monad(std::array{ 'A', 'B' }).cartesian_product(v));
 	}
 
