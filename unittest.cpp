@@ -20,7 +20,7 @@ static_assert(
 // filter
 static_assert(
 	[] -> bool {
-		return monad({ 1,2,3,4 })
+		return monad(std::array{ 1,2,3,4 })
 			.filter(is_even)
 			.equal({ 2,4 });
 	} (),
@@ -31,7 +31,7 @@ static_assert(
 // transform
 static_assert(
 	[] -> bool {
-		return monad({ 1,2,3,4 })
+		return monad(std::array{ 1,2,3,4 })
 			.transform(is_even)
 			.equal({ false, true, false, true });
 	} (),
@@ -42,7 +42,7 @@ static_assert(
 // take
 static_assert(
 	[] -> bool {
-		return monad({ 1,2,3,4 })
+		return monad(std::array{ 1,2,3,4 })
 			.take(2)
 			.equal({ 1,2 });
 	} (),
@@ -53,7 +53,7 @@ static_assert(
 // take_while
 static_assert(
 	[] -> bool {
-		return monad({ 1,2,3,4 })
+		return monad(std::array{ 1,2,3,4 })
 			.take_while(lt_three)
 			.equal({ 1,2 });
 	} (),
@@ -64,7 +64,7 @@ static_assert(
 // drop
 static_assert(
 	[] -> bool {
-		return monad({ 1,2,3,4 })
+		return monad(std::array{ 1,2,3,4 })
 			.drop(2)
 			.equal({ 3,4 });
 	} (),
@@ -75,7 +75,7 @@ static_assert(
 // drop_while
 static_assert(
 	[] -> bool {
-		return monad({ 1,2,3,4 })
+		return monad(std::array{ 1,2,3,4 })
 			.drop_while(lt_three)
 			.equal({ 3, 4 });
 	} (),
@@ -88,7 +88,7 @@ static_assert(
 	[] -> bool {
 		std::array const v1{ 1,2     };
 		std::array const v2{     3,4 };
-		return monad({ v1, v2 })
+		return monad(std::array{ v1, v2 })
 			.join()
 			.equal({ 1,2, 3,4 });
 	} (),
@@ -101,7 +101,7 @@ static_assert(
 	[] -> bool {
 		std::array const v1{ 1,2     };
 		std::array const v2{     3,4 };
-		return monad({ v1, v2 })
+		return monad(std::array{ v1, v2 })
 			.join_with(9)
 			.equal({ 1,2, 9, 3,4 });
 	} (),
@@ -112,7 +112,7 @@ static_assert(
 // lazy_split
 static_assert(
 	[] -> bool {
-		return monad({ 0,  1,  0,  2,3,  0,  4,5,6 })
+		return monad(std::array{ 0,  1,  0,  2,3,  0,  4,5,6 })
 			.lazy_split(0)
 			.join()
 			.equal({1, 2, 3, 4, 5, 6});
@@ -125,7 +125,7 @@ static_assert(
 // concat
 static_assert(
 	[] -> bool {
-		return monad({ 1,2 })
+		return monad(std::array{ 1,2 })
 			.concat({ 3,4 })
 			.equal({1, 2, 3, 4});
 	} (),
@@ -137,7 +137,7 @@ static_assert(
 // reverse
 static_assert(
 	[] -> bool {
-		return monad({ 1,2,3 })
+		return monad(std::array{ 1,2,3 })
 			.reverse()
 			.equal({ 3,2,1 });
 	} (),
@@ -148,7 +148,7 @@ static_assert(
 // as_const
 static_assert(
 	[] -> bool {
-		auto m = monad({ 1,2,3 }).as_const();
+		auto m = monad(std::array{ 1,2,3 }).as_const();
 		if constexpr (!requires { m.front()++; })
 			return true;
 		else
@@ -204,7 +204,7 @@ static_assert(
 // enmumerate
 static_assert(
 	[] -> bool {
-		return monad({ 'A', 'B', 'C', 'D', 'E' })
+		return monad(std::array{ 'A', 'B', 'C', 'D', 'E' })
 			.enumerate()
 			.equal({
 				std::make_pair(0, 'A'),
@@ -221,7 +221,7 @@ static_assert(
 // zip
 static_assert(
 	[] -> bool {
-		return monad({ 0, 1, 2, 3 })
+		return monad(std::array{ 0, 1, 2, 3 })
 			.zip(std::array{ 'A', 'B', 'C', 'D', 'E' })
 			.equal({
 				std::make_pair(0, 'A'),
@@ -240,7 +240,7 @@ static_assert(
 		auto fn = [](int i, char c) { return char(c + i); };
 		auto y = { 'A', 'B', 'C', 'D', 'E' };
 
-		return monad({ 0, 1, 2, 3 })
+		return monad(std::array{ 0, 1, 2, 3 })
 			.zip_transform(fn, y)
 			.equal({'A', 'C', 'E', 'G'});
 	} (),
@@ -275,7 +275,7 @@ static_assert(
 // chunk
 static_assert(
 	[] -> bool {
-		auto v = monad({ 0, 1, 2, 3 })
+		auto v = monad(std::array{ 0, 1, 2, 3 })
 			.chunk(2);
 		auto it = v.begin();
 		auto it2 = std::next(it);
@@ -290,7 +290,7 @@ static_assert(
 // slide
 static_assert(
 	[] -> bool {
-		auto v = monad({ 0, 1, 2, 3 })
+		auto v = monad(std::array{ 0, 1, 2, 3 })
 			.slide(3);
 		auto it = v.begin();
 		auto it2 = std::next(it);
@@ -305,7 +305,7 @@ static_assert(
 // chunk_by
 static_assert(
 	[] -> bool {
-		auto v = monad({ 0, 1, 0, 3 })
+		auto v = monad(std::array{ 0, 1, 0, 3 })
 			.chunk_by(std::ranges::less{});
 		auto it = v.begin();
 		auto it2 = std::next(it);
@@ -320,7 +320,7 @@ static_assert(
 // stride
 static_assert(
 	[] -> bool {
-		return monad({ 0, 1, 2, 3 })
+		return monad(std::array{ 0, 1, 2, 3 })
 			.stride(2)
 			.equal({ 0, 2 });
 	} (),
@@ -331,7 +331,7 @@ static_assert(
 // cartesian_product
 static_assert(
 	[] -> bool {
-		return 6 == monad({ 0, 1 })
+		return 6 == monad(std::array{ 0, 1 })
 			.cartesian_product(std::array{ 'A', 'B', 'C' })
 			.distance();
 	} (),

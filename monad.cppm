@@ -1,28 +1,29 @@
 ﻿export module monad;
 import std;
 
+template<typename Fn, typename ...Args>
+concept valid_transformer = std::is_invocable_v<Fn, Args...> && !std::same_as<void, std::invoke_result_t<Fn, Args...>>;
 
-template<typename T>
-concept mutable_monad = !std::is_const_v<std::remove_reference_t<T>>;
+template<typename Fn, typename ...Args>
+concept valid_passthrough = std::is_invocable_v<Fn, Args...> && std::same_as<void, std::invoke_result_t<Fn, Args...>>;
+
+
 
 export template<typename V>
 class monad : public std::ranges::view_interface<monad<V>> {
 	V view_;
-	using Base = std::remove_reference_t<decltype(*std::ranges::begin(view_))>;
+	using Base = std::iter_value_t<std::ranges::iterator_t<V>>;
 
 public:
 	monad() = delete;
 
-	// NOTE: this makes a copy of the initializer list
-	template<typename T>
-	constexpr monad(std::initializer_list<T> il) : view_(il) {}
-
-	template<std::ranges::viewable_range R>
-	explicit constexpr monad(R&& cont) noexcept : view_(std::forward<R>(cont)) {}
-
+	template<std::ranges::range Range>
+	explicit constexpr monad(Range&& r) noexcept : view_{ std::forward<Range>(r) } {}
+	template<std::ranges::view View>
+	explicit constexpr monad(View&& v) noexcept : view_{ std::forward<View>(v) } {}
 
 	constexpr auto begin() { return std::ranges::begin(view_); }
-	constexpr auto end()   { return std::ranges::end(view_); }
+	constexpr auto end() { return std::ranges::end(view_); }
 
 	constexpr auto as_rvalue() {
 		return ::monad(
@@ -30,55 +31,74 @@ public:
 		);
 	}
 
-	template<typename Fn, mutable_monad Self>
-	constexpr auto filter(this Self&& self, Fn&& fn) {
+	template<std::predicate<Base const&> Fn>
+	constexpr auto filter(Fn&& fn) {
 		return ::monad(
-			std::ranges::views::filter(std::move(std::forward<Self>(self).view_), std::forward<Fn>(fn))
+			std::ranges::views::filter(std::move(view_), std::forward<Fn>(fn))
+		);
+	}
+
+	// Filter using a member function pointer of 'Base'
+	template<typename TypeHack = std::conditional_t<std::is_class_v<Base>, Base, std::nullopt_t>>
+		requires std::is_class_v<Base>
+	constexpr auto filter(bool (TypeHack::* fn)() const) {
+		return ::monad(
+			std::ranges::views::filter(std::move(view_), fn)
 		);
 	}
 
 	template<typename Fn>
+		requires valid_transformer<Fn, Base const&>
 	constexpr auto transform(Fn&& fn) {
 		return ::monad(
 			std::ranges::views::transform(std::move(view_), std::forward<Fn>(fn))
 		);
 	}
 
-	constexpr auto take(std::integral auto i) {
+	template<typename Fn>
+		requires valid_passthrough<Fn, Base const&>
+	constexpr auto passthrough(Fn&& fn) {
 		return ::monad(
-			std::ranges::views::take(std::move(view_), i)
+			std::ranges::views::transform(std::move(view_),
+				[fn = std::forward<Fn>(fn)](auto const& v) { fn(v); return v; }
+			)
 		);
 	}
 
-	template<typename Fn>
+	constexpr auto take(std::ranges::range_difference_t<V> count) {
+		return ::monad(
+			std::ranges::views::take(std::move(view_), count)
+		);
+	}
+
+	template<std::predicate<Base const&> Fn>
 	constexpr auto take_while(Fn&& fn) {
 		return ::monad(
 			std::ranges::views::take_while(std::move(view_), std::forward<Fn>(fn))
 		);
 	}
 
-	constexpr auto drop(std::integral auto i) {
+	constexpr auto drop(std::ranges::range_difference_t<V> count) {
 		return ::monad(
-			std::ranges::views::drop(std::move(view_), i)
+			std::ranges::views::drop(std::move(view_), count)
 		);
 	}
 
-	template<typename Fn>
+	template<std::predicate<Base const&> Fn>
 	constexpr auto drop_while(Fn&& fn) {
 		return ::monad(
 			std::ranges::views::drop_while(std::move(view_), std::forward<Fn>(fn))
 		);
 	}
 
-	constexpr auto join() {
-		static_assert(std::ranges::input_range<Base>, "'join' must be a view of ranges");
+	constexpr auto join() requires std::ranges::range<Base> {
 		return ::monad(
 			// Use a 'views::join' to be able to do a double join
 			std::ranges::views::join(std::move(view_))
 		);
 	}
 
-	constexpr auto join_with(auto&& pattern) {
+	constexpr auto join_with(auto&& pattern) requires std::ranges::range<Base> {
 		return ::monad(
 			std::ranges::views::join_with(std::move(view_), std::move(pattern))
 		);
@@ -124,15 +144,15 @@ public:
 		);
 	}
 
-	constexpr auto keys() 
-		requires (std::tuple_size_v<Base> >= 1) {
+	constexpr auto keys()
+		requires (std::tuple_size_v<Base> > 0) {
 		return ::monad(
 			std::ranges::views::keys(std::move(view_))
 		);
 	}
 
-	constexpr auto values() 
-		requires (std::tuple_size_v<Base> >= 2) {
+	constexpr auto values()
+		requires (std::tuple_size_v<Base> > 1) {
 		return ::monad(
 			std::ranges::views::values(std::move(view_))
 		);
@@ -152,7 +172,7 @@ public:
 	}
 
 	template<typename F, std::ranges::viewable_range... Rs>
-	constexpr auto zip_transform(F &&f, Rs&& ...rs) {
+	constexpr auto zip_transform(F&& f, Rs&& ...rs) {
 		return ::monad(
 			std::ranges::views::zip_transform(std::forward<F>(f), std::move(view_), std::forward<Rs>(rs)...)
 		);
@@ -186,7 +206,7 @@ public:
 		);
 	}
 
-	template<typename Pred>
+	template<std::indirect_binary_predicate<std::ranges::iterator_t<V>, std::ranges::iterator_t<V>> Pred>
 	constexpr auto chunk_by(Pred&& pred) {
 		return ::monad(
 			std::ranges::views::chunk_by(std::move(view_), std::forward<Pred>(pred))
@@ -223,6 +243,49 @@ public:
 #endif
 
 	//
+	// My own stuff
+	// 
+
+	// Pick out the elements of the tuple at the given indices
+	template<int ...Is>
+	constexpr auto select() {
+		return ::monad(
+			std::ranges::views::zip(std::ranges::views::elements<Is>(view_)...)
+		);
+	}
+
+	// Apply projections to the incoming value and return them as a tuple
+	template<typename ...Projs>
+	constexpr auto as_tuple(Projs&& ...projs) {
+		auto converter = [=](auto&& v) { return std::tuple{ std::invoke(projs, v)... }; };
+
+		return ::monad(std::ranges::views::transform(view_, converter));
+	}
+
+	// Like transform, but for tuple-like values
+	template<typename Fn>
+	constexpr auto apply(Fn&& fn) {
+		auto converter = [=](auto&& v) { return std::apply(fn, v); };
+		return ::monad(std::ranges::views::transform(view_, converter));
+	}
+
+	template<typename Fn>
+	constexpr auto pair_with(Fn&& fn) {
+		return ::monad(
+			std::ranges::views::zip(
+				std::ranges::views::transform(view_, std::forward<Fn>(fn)),
+				view_
+			)
+		);
+	}
+
+	// Convert to T
+	template<typename T>
+	constexpr auto as() {
+		return ::monad(std::ranges::views::transform(view_, +[](Base&& v) { return T{ v }; }));
+	}
+
+	//
 	// Wrap some ranges stuff 
 	//
 
@@ -240,18 +303,19 @@ public:
 	}
 
 	template<template <typename...> typename To>
-	constexpr auto to() const {
-		return std::ranges::to<To>(view_);
+	constexpr auto to() {
+		return std::ranges::to<To>(std::move(view_));
 	}
 
 	template<typename To>
-	constexpr auto to() const {
-		return std::ranges::to<To>(view_);
+	constexpr auto to() {
+		return std::ranges::to<To>(std::move(view_));
 	}
 };
 
-template<typename T>
-monad(std::initializer_list<T>) -> monad<std::ranges::views::all_t<std::vector<T>>>;
 
-template<std::ranges::viewable_range R>
+template<std::ranges::range R>
 monad(R&&) -> monad<std::ranges::views::all_t<R>>;
+
+template<std::ranges::view V>
+monad(V&&) -> monad<V>;
