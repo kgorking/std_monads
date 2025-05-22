@@ -13,14 +13,34 @@ int main()
 	std::println("monad: {} ", monad(v));
 
 	{
+		auto letters = std::array{ 'e', 'd', 'c', 'b', 'a' };
+		auto m = monad(letters)
+			.filter(is_odd)
+			.sort_copy()
+			.enumerate();
+		std::println("\nsort and enum {}: {}", letters, m);
+	}
+
+	{
 		std::println("\ntransform x2: {} ",
 			monad(v).transform(mul_two)
 		);
 	}
 
 	{
+		auto const a2 = std::array{ 2,4,6 };
+		auto m = monad(std::array{ 1,2,3,4,5,6,7 }).filter(is_odd);
+		std::println("\n{} != {}: {}", m, a2, m.not_equal_to(a2));
+	}
+
+	{
 		std::println("\nfilter odd: {} ",
 			monad(v).filter(is_odd));
+	}
+
+	{
+		std::println("\nfilter not odd: {} ",
+			monad(v).filter_not(is_odd));
 	}
 
 	{
