@@ -476,9 +476,9 @@ template<std::ranges::view V>
 monad(V&&) -> monad<V>;
 
 
-constexpr auto is_even = [](int i) { return 0 == i % 2; };
-constexpr auto lt_three = [](int i) { return i < 3; };
-constexpr auto mul_two = [](int v) { return v * 2; };
+static constexpr auto is_even = [](int i) { return 0 == i % 2; };
+static constexpr auto lt_three = [](int i) { return i < 3; };
+static constexpr auto mul_two = [](int v) { return v * 2; };
 
 
 // Test constructors

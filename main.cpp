@@ -1,14 +1,33 @@
 import monad;
+import range;
 import std;
+
+auto is_odd = [](int i) { return i % 2; };
+auto add_three = [](int v) { return v + 3; };
+auto mul_two = [](int v) { return v * 2; };
+auto no_return = [](int v) { std::println("no return: {}", v); };
+
+void test() {
+	std::vector<int> const v = { 1, 2, 3, 4, 5 };
+
+	int sum = range(v)
+		.filter(is_odd)
+		.take(2)
+		.transform(add_three)
+		.for_each([](int v) {
+			std::println("range test: {} ", v);
+		})
+		.sum()
+		;
+
+	std::println("range test: {} ", sum);
+}
 
 int main()
 {
+	test();
+	return 0;
 	std::vector<int> const v = { 1, 2, 3, 2, 1 };
-
-	auto is_odd = [](int i) { return i % 2; };
-	auto add_three = [](int v) { return v + 3; };
-	auto mul_two = [](int v) { return v * 2; };
-	auto no_return = [](int v) { std::println("no return: {}", v); };
 
 	std::println("monad: {} ", monad(v));
 
