@@ -7,23 +7,46 @@ auto add_three = [](int v) { return v + 3; };
 auto mul_two = [](int v) { return v * 2; };
 auto no_return = [](int v) { std::println("no return: {}", v); };
 
-void test() {
+void test_concat_sum() {
 	std::vector<int> const v = { 1, 2, 3, 4, 5 };
 
 	int sum = range(v)
-		.join(v,v,v)
+		.concat(v)
 		.for_each([](int i) {
-			std::println("range test: {} ", i);
+			std::print("{} ", i);
 		})
-		.sum()
-		;
+		.sum();
 
-	std::println("range test: {} ", sum);
+	std::println("\ntest_concat_sum: {} ", sum);
+}
+
+void test_join() {
+	using namespace std::literals;
+
+	std::print("test_join: ");
+	std::vector v{ "This"sv, "is"sv, "a"sv, "test."sv };
+	range(v)
+		.join()
+		.for_each(&std::putchar);
+	std::println();
+}
+
+void test_join_with() {
+	using namespace std::literals;
+
+	std::print("test_join_with: ");
+	std::vector v{ "This"sv, "is"sv, "a"sv, "test."sv };
+	range(v)
+		.join_with(" - "sv)
+		.for_each(&std::putchar);
+	std::println();
 }
 
 int main()
 {
-	test();
+	test_concat_sum();
+	test_join();
+	test_join_with();
 	return 0;
 /*	std::vector<int> const v = { 1, 2, 3, 2, 1 };
 

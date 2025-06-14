@@ -1,7 +1,14 @@
 export module range;
+import std;
+
+#ifdef __cpp_deleted_function
+#define REASON(x) (x)
+#else
+#define REASON(x)
+#endif
 
 template<typename T>
-concept range_like = requires(T rng) { rng.begin(); rng.end(); };
+concept range_like = requires(T rng) { std::begin(rng); std::end(rng); };
 
 static constexpr auto make_fn(range_like auto const& rng) {
 	return [first = rng.begin(), last = rng.end()](auto dst) {
@@ -24,14 +31,13 @@ template<typename Fn>
 class range {
 	Fn fn;
 
-	struct func_t {};
 public:
-	explicit range(Fn fn) requires (!range_like<Fn>) : fn(fn) {}
+	constexpr explicit range(Fn fn) requires (!range_like<Fn>) : fn(fn) {}
 
 	template<range_like ...Ts>
-	explicit range(Ts const&... rng) : fn(make_fns(rng...)) {}
+	constexpr explicit range(Ts const&... rng) : fn(make_fns(rng...)) {}
 
-	auto filter(auto pred) const {
+	constexpr auto filter(auto pred) const {
 		return ::range{
 			[=, fn = fn](auto dst) {
 				return fn([&](auto v) {
@@ -44,7 +50,7 @@ public:
 		};
 	}
 
-	auto transform(auto xform) const {
+	constexpr auto transform(auto xform) const {
 		return ::range{
 			[=, fn = fn](auto dst) {
 				return fn([&](auto v) {
@@ -54,7 +60,7 @@ public:
 		};
 	}
 
-	auto take(int n) const {
+	constexpr auto take(int n) const {
 		if (n <= 0)
 			throw;
 
@@ -68,7 +74,7 @@ public:
 		};
 	}
 
-	auto drop(int n) const {
+	constexpr auto drop(int n) const {
 		if (n <= 0)
 			throw;
 
@@ -85,7 +91,7 @@ public:
 		};
 	}
 
-	constexpr auto join(range_like auto const&... rng) {
+	constexpr auto concat(range_like auto const&... rng) {
 		return ::range{
 			[fn = fn, ...fns = make_fn(rng)](auto dst) {
 				return fn(dst) && (fns(dst) && ...);
@@ -93,15 +99,53 @@ public:
 		};
 	}
 
-	range for_each(auto dst) const {
+	constexpr auto join() {
+		return ::range{
+			[=, fn = fn](auto dst) {
+				return fn([&](auto v) {
+					static_assert(std::ranges::forward_range<decltype(v)>, "Input must be a range");
+					for(auto const& p : v) {
+						if (!dst(p)) return false;
+					}
+					return true;
+					});
+			}
+		};
+	}
+
+	template<typename T>
+	constexpr auto join_with(T&& pattern) {
+		return ::range{
+			[=, fn = fn](auto dst) {
+				return fn([&](auto v) {
+					for(auto const& p : v) {
+						if (!dst(p)) return false;
+					}
+					
+					if constexpr (std::ranges::forward_range<T>) {
+						for (auto const& p : pattern) {
+							if (!dst(p)) return false;
+						}
+						return true;
+					}
+					else {
+						return dst(pattern);
+					}
+					});
+			}
+		};
+	}
+	constexpr auto join_with(const char* pattern) = delete REASON("Don't use raw strings. Wrap it in a string_view.");
+
+	constexpr range for_each(auto user_fn) const {
 		fn([&](auto v) {
-			dst(v);
+			user_fn(v);
 			return true;
 			});
 		return *this;
 	}
 
-	auto sum() const {
+	constexpr auto sum() const {
 		auto total = 0;
 		fn([&](auto v) { total += v; return true; });
 		return total;
