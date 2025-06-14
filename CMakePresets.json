@@ -87,7 +87,8 @@
       "installDir": "${sourceDir}/out/install/${presetName}",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
-        "CMAKE_CXX_COMPILER": "clang"
+        "CMAKE_CXX_COMPILER": "clang++-21",
+        "CMAKE_CXX_FLAGS": "-stdlib=libc++"
       },
       "condition": {
         "type": "equals",

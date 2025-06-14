@@ -1,4 +1,4 @@
-import monad;
+//import monad;
 import range;
 import std;
 
@@ -11,11 +11,9 @@ void test() {
 	std::vector<int> const v = { 1, 2, 3, 4, 5 };
 
 	int sum = range(v)
-		.filter(is_odd)
-		.take(2)
-		.transform(add_three)
-		.for_each([](int v) {
-			std::println("range test: {} ", v);
+		.join(v,v,v)
+		.for_each([](int i) {
+			std::println("range test: {} ", i);
 		})
 		.sum()
 		;
@@ -27,7 +25,7 @@ int main()
 {
 	test();
 	return 0;
-	std::vector<int> const v = { 1, 2, 3, 2, 1 };
+/*	std::vector<int> const v = { 1, 2, 3, 2, 1 };
 
 	std::println("monad: {} ", monad(v));
 
@@ -107,6 +105,6 @@ int main()
 		std::println("\ncartesian_product: {}",
 			monad(std::array{ 'A', 'B' }).cartesian_product(v));
 	}
-
+*/
 	return 0;
 }
