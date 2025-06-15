@@ -20,7 +20,7 @@ std::optional<int> to_int(std::string_view sv) {
 
 static constexpr std::array const ints = { 1, 2, 3, 4, 5 };
 static constexpr std::array strings{ "This"sv, "is"sv, "a"sv, "test."sv };
-static const     std::vector<std::optional<std::string>> opts{ "1234", "15 foo", "bar", "42", "5000000000", " 5", std::nullopt, "-43" };
+static const     std::vector<std::optional<std::string>> opts{ "1234", "15 foo", "bar", std::nullopt, "42", "5000000000", " 5", std::nullopt, "-43" };
 
 void test_one_value() {
 	std::print("6.map(is_odd): ");
@@ -34,9 +34,7 @@ void test_one_value() {
 
 void test_optionals() {
 	std::print("optionals.map(to_int): ");
-	monad2(opts)
-		.map(to_int)
-		.then(putval);
+	monad2(opts).map(to_int).then(putval);
 	std::println();
 }
 

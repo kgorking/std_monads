@@ -1,4 +1,5 @@
 export module monad2;
+import std;
 
 #ifdef __cpp_deleted_function
 #define REASON(x) (x)
@@ -16,9 +17,6 @@ static constexpr auto unbox(auto const& opt) {
 	if constexpr (optional_like<decltype(opt)>) {
 		return opt.value();
 	}
-	//else if constexpr (expected_like<decltype(opt)>) {
-	//	return opt.value();
-	//}
 	else {
 		return opt;
 	}
@@ -192,6 +190,10 @@ public:
 		return *this;
 	}
 
+	//
+	// Terminal operations
+	//
+
 	constexpr auto sum() const {
 		auto total = 0;
 		fn([&](auto v) {
@@ -201,6 +203,25 @@ public:
 			return true;
 			});
 		return total;
+	}
+
+	template<typename C>
+	constexpr auto to() const {
+		C c;
+		using T = typename C::value_type;
+
+		then([&](T v) {
+			if constexpr (requires { c.emplace_back(std::declval<T>()); })
+				c.emplace_back(std::forward<T>(v));
+			else if constexpr (requires { c.push_back(std::declval<T>()); })
+				c.push_back(std::forward<T>(v));
+			else if constexpr (requires { c.emplace(std::declval<T>()); })
+				c.emplace(std::forward<T>(v));
+			else
+				c.insert(c.end(), std::forward<T>(v));
+			});
+
+		return c;
 	}
 };
 
