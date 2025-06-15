@@ -7,6 +7,7 @@ using namespace std::literals;
 auto is_odd = [](int i) { return i % 2 != 0; };
 auto add_three = [](int v) { return v + 3; };
 auto mul_two = [](int v) { return v * 2; };
+auto putval_s = [](auto val) { std::print("{}", val); };
 auto putval = [](auto val) { std::print("{} ", val); };
 
 std::optional<int> to_int(std::string_view sv) {
@@ -20,7 +21,18 @@ std::optional<int> to_int(std::string_view sv) {
 
 static constexpr std::array const ints = { 1, 2, 3, 4, 5 };
 static constexpr std::array strings{ "This"sv, "is"sv, "a"sv, "test."sv };
-static const     std::vector<std::optional<std::string>> opts{ "1234", "15 foo", "bar", std::nullopt, "42", "5000000000", " 5", std::nullopt, "-43" };
+static const     std::vector<std::optional<std::string_view>> opts{ "1234", "15 foo", "bar", std::nullopt, "42", "5000000000", " 5", std::nullopt, "-43" };
+
+void test_split() {
+	std::print("ints.split(3): ");
+	monad2(ints).split(3).then(putval);
+	std::println();
+
+	std::string s = monad2(strings).join_with(',').to<std::string>();
+	std::print("{:?}.split(,): ", s);
+	monad2(s).split(',').then(putval);
+	std::println();
+}
 
 void test_one_value() {
 	std::print("6.map(is_odd): ");
@@ -66,26 +78,45 @@ void test_join_with() {
 		.join_with(" - "sv)
 		.then(&std::putchar);
 	std::println();
+
+	std::print("strings.join_with(|): ");
+	monad2(strings)
+		.join_with('|')
+		.then(&std::putchar);
+	std::println();
+}
+
+void test_take() {
+	std::print("ints.take(3): ");
+	monad2(ints).take(3).then(putval);
+	std::println();
+}
+
+void test_drop() {
+	std::print("ints.drop(3): ");
+	monad2(ints).drop(3).then(putval);
+	std::println();
 }
 
 int main() {
 	std::println("ints: {}", ints);
 	std::println("strings: {}", strings);
-	std::print("optionals: [");
-	monad2(opts)
-		.value_or("nullopt"sv)
-		.map([](auto const& v) { return std::format("{:?}", v); })
-		.then(putval);
-	std::println("]");
+	std::println("optionals: {}", monad2(opts)
+		.value_or("<nullopt>"sv)
+		.to<std::vector>()
+	);
 
 	std::println();
 
+	test_split();
 	test_optionals();
 	test_one_value();
 	test_map();
 	test_concat_sum();
 	test_join();
 	test_join_with();
+	test_take();
+	test_drop();
 
 	return 0;
 }
