@@ -38,6 +38,14 @@
       }
     },
     {
+      "name": "x64-profile",
+      "displayName": "x64 Profile",
+      "inherits": "x64-debug",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo"
+      }
+    },
+    {
       "name": "clang-debug",
       "displayName": "Clang Debug",
       "generator": "Ninja",

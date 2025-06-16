@@ -12,17 +12,23 @@ template<typename T> concept optional_like = requires(T opt) { opt.has_value(); 
 template<typename T> concept expected_like = optional_like<T> && requires(T exp) { exp.error(); };
 template<typename Fn> concept function_like = requires(Fn fn) { fn([](auto) -> bool { return true; }); };
 
-template<typename Fn>
-static constexpr auto defer(Fn&& fn) {
-	struct D {
-		Fn fn;
-		constexpr ~D() noexcept(noexcept(fn())) { fn(); }
-	} defer{ std::forward<Fn>(fn) };
-	return defer;
+template<typename VT>
+constexpr void add_to_container(auto& c, VT&& v) {
+	if constexpr (requires { c.emplace_back(std::declval<VT>()); })
+		c.emplace_back(std::forward<VT>(v));
+	else if constexpr (requires { c.push_back(std::declval<VT>()); })
+		c.push_back(std::forward<VT>(v));
+	else if constexpr (requires { c.emplace(std::declval<VT>()); })
+		c.emplace(std::forward<VT>(v));
+	else if constexpr (requires { c.insert_range(c.end(), std::declval<VT>()); })
+		c.insert_range(c.end(), std::forward<VT>(v));
+	else
+		c.insert(c.end(), std::forward<VT>(v));
 }
 
-static constexpr auto unbox(auto&& opt) {
-	if constexpr (optional_like<decltype(opt)>) {
+template<typename T>
+constexpr auto unbox(T const& opt) {
+	if constexpr (optional_like<T>) {
 		return opt.value();
 	}
 	else {
@@ -30,7 +36,10 @@ static constexpr auto unbox(auto&& opt) {
 	}
 }
 
-static constexpr bool valid(auto&& v) {
+template<typename T>
+using unboxed_t = decltype(unbox(std::declval<T>()));
+
+constexpr bool valid(auto const& v) {
 	if constexpr (optional_like<decltype(v)>) {
 		return v.has_value();
 	}
@@ -39,13 +48,13 @@ static constexpr bool valid(auto&& v) {
 	}
 }
 
-static constexpr auto make_one(auto const& val) {
+constexpr auto make_one(auto const& val) {
 	return [val](auto dst) {
 		return dst(val);
 		};
 }
 
-static constexpr auto make_fn(range_like auto const& rng) {
+constexpr auto make_fn(range_like auto const& rng) {
 	return [first = rng.begin(), last = rng.end()](auto dst) {
 		auto it = first;
 		bool cont = true;
@@ -56,249 +65,219 @@ static constexpr auto make_fn(range_like auto const& rng) {
 		};
 }
 
-static constexpr auto make_fns(range_like auto const&... rng) {
+constexpr auto make_fns(range_like auto const&... rng) {
 	return [...fns = make_fn(rng)](auto dst) {
 		return (fns(dst) && ...);
 		};
 }
 
+// TODO return std::bool_constant
 export
 template<typename T, function_like Fn>
 class monad2 {
-	using value_type = T;
 	Fn fn;
 
 public:
-	constexpr explicit monad2(Fn fn) : fn(fn) {}
+	constexpr explicit monad2(Fn&& fn) : fn(std::forward<Fn>(fn)) {}
 	constexpr explicit monad2(range_like auto const& rng) : fn(make_fn(rng)) {}
 	constexpr explicit monad2(auto const& val) : fn(make_one(val)) {}
 
-	constexpr auto filter(auto pred) const {
-		auto f = [=, fn = fn](auto dst) {
+	constexpr auto filter(std::predicate<T> auto pred) const {
+		auto f = [=, fn = std::move(fn)](auto dst) {
 			return fn([&](auto v) {
-				if (pred(v)) {
+				if (pred(v))
 					return dst(v);
-				}
 				return true;
 				});
 			};
-		return ::monad2<T, decltype(f)>{f};
+		return ::monad2<T, decltype(f)>{std::move(f)};
 	}
 
-	constexpr auto map(auto mf) const {
-		auto f = [=, fn = fn](auto dst) {
+	constexpr auto map(std::invocable<unboxed_t<T>> auto mf) const {
+		auto f = [=, fn = std::move(fn)](auto dst) {
 			return fn([&](auto v) {
-				if (!valid(v))
-					return true;
-				return dst(mf(unbox(v)));
+				if (valid(v))
+					return dst(std::invoke(mf, unbox(v)));
+				return true;
 				});
 			};
-		return ::monad2 < std::invoke_result_t<decltype(mf), decltype(unbox(value_type{})) > , decltype(f) > {f};
+		return ::monad2<std::invoke_result_t<decltype(mf), unboxed_t<T>> , decltype(f) > {std::move(f)};
 	}
 
-	constexpr auto take(int n) const {
-		if (n <= 0)
-			throw;
+	constexpr auto take(std::signed_integral auto n) const {
+		if (n <= 0) throw;
 
-		auto f = [=, fn = fn](auto dst) {
-			int count = 0;
+		auto f = [=, fn = std::move(fn)](auto dst) {
+			decltype(n) count = 0;
 			return fn([&](auto v) {
 				return count++ < n && dst(v);
 				});
 			};
-		return ::monad2<value_type, decltype(f)>{f};
+		return ::monad2<T, decltype(f)>{std::move(f)};
 	}
 
-	constexpr auto drop(int n) const {
-		if (n <= 0)
-			throw;
+	constexpr auto drop(std::signed_integral auto n) const {
+		if (n <= 0) throw;
 
-		auto f = [=, fn = fn](auto dst) {
-			int count = 0;
+		auto f = [=, fn = std::move(fn)](auto dst) {
+			decltype(n) count = 0;
 			return fn([&](auto v) {
-				if (count++ >= n) {
-					return dst(v);
-				}
-				return true;
+				return count++ < n || dst(v);
 				});
 			};
-		return ::monad2<value_type, decltype(f)>{f};
+		return ::monad2<T, decltype(f)>{std::move(f)};
 	}
 
 	constexpr auto concat(range_like auto const&... rng) const {
-		auto f = [fn = fn, ...fns = make_fn(rng)](auto dst) {
+		auto f = [fn = std::move(fn), ...fns = make_fn(rng)](auto dst) {
 			return fn(dst) && (fns(dst) && ...);
 			};
-		return ::monad2<value_type, decltype(f)>{f};
+		return ::monad2<T, decltype(f)>{std::move(f)};
 	}
 
-	constexpr auto join() const requires range_like<value_type> {
-		auto f = [=, fn = fn](auto dst) {
-			return fn([&](auto v) {
-				for (auto const& p : v) {
+	constexpr auto join() const requires range_like<T> {
+		auto f = [=, fn = std::move(fn)](auto dst) {
+			return fn([&](auto const& v) {
+				for (auto p : v) {
 					if (!dst(p)) return false;
 				}
 				return true;
 				});
 			};
-		return ::monad2<typename value_type::value_type, decltype(f)>{f};
+		return ::monad2<typename T::value_type, decltype(f)>{std::move(f)};
 	}
 
 	template<typename P>
-	constexpr auto join_with(P&& pattern) const requires range_like<value_type> {
-		auto f = [=, fn = fn](auto dst) {
-			bool retval = true;
-			value_type const* last = nullptr;
-
-			auto def_ = defer([&] {
-				if (last) {
-					for (auto const& p : *last) {
-						retval = dst(p);
-						if (!retval)
+	constexpr auto join_with(P&& pattern) const requires range_like<T> {
+		auto f = [=, fn = std::move(fn)](auto dst) {
+			auto send_to_dst = [&](auto const& l) {
+				if constexpr (range_like<decltype(l)>) {
+					for (auto p : l) {
+						if (!dst(p))
 							return false;
 					}
+					return true;
 				}
-				return retval;
+				else {
+					return dst(l);
+				}
+				};
+
+			std::optional<T> last;
+			bool const retval = fn([&](auto const& v) {
+				auto const l = last;
+				last = v;
+
+				if (l)
+					if (!(send_to_dst(*l) && send_to_dst(pattern)))
+						return false;
+				return true;
 				});
 
-			return fn([&](auto const& v) {
-				if (last) {
-					for (auto const& p : *last) {
-						if (!dst(p)) {
-							retval = false;
-							return false;
-						}
-					}
-
-					if constexpr (range_like<decltype(pattern)>) {
-						for (auto const& p : pattern) {
-							if (!dst(p)) {
-								retval = false;
-								return false;
-							}
-						}
-					}
-					else {
-						retval = dst(pattern);
-					}
-				}
-
-				last = &v;
-				return retval;
-				});
+			return last ? send_to_dst(*last) : true;
 			};
-		return ::monad2<typename value_type::value_type, decltype(f)>{f};
+		return ::monad2<typename T::value_type, decltype(f)>{std::move(f)};
 	}
 	constexpr auto join_with(const char* pattern) = delete REASON("Don't use raw strings. Wrap it in a string_view.");
 
-	constexpr auto value_or(auto other) const requires optional_like<value_type> {
-		auto f = [=, fn = fn](auto dst) {
+	template<typename Other>
+	constexpr auto value_or(Other&& other) const requires optional_like<T> {
+		auto f = [=, fn = std::move(fn)](auto dst) {
 			return fn([&](auto v) {
 				if (!valid(v))
 					return dst(other);
 				else
 					return dst(unbox(v));
-			});
+				});
 			};
-		return ::monad2<typename value_type::value_type, decltype(f)>{f};
+		return ::monad2<typename T::value_type, decltype(f)>{std::move(f)};
 	}
 
+	// TODO detect immutable streams and use iterators instead of copying
 	constexpr auto split(auto delimiter) const {
-		auto f = [=, fn = fn]<typename Dst>(Dst dst) {
-			std::vector<value_type> part;
-			bool retval = true;
+		constexpr bool use_string_as_container = std::same_as<T, char>;
+		using Container = std::conditional_t<use_string_as_container, std::basic_string<T>, std::vector<T>>;
 
-			auto def_ = defer([&] {
-				if constexpr (requires { std::string_view{ part }; }) {
-					retval = retval && dst(std::string_view{ part });
-				}
-				else {
-					retval = retval && dst(part);
-				}
-				});
+		auto f = [=, fn = std::move(fn)](auto dst) {
+			Container part;
 
-			return fn([&](auto v) {
-				if (!valid(v))
-					return true;
-
-				auto const uv = unbox(v);
-				if (uv == delimiter) {
-					if constexpr (requires { std::string_view{ part }; }) {
-						if (!dst(std::string_view{ part })) {
-							retval = false;
+			bool const retval = fn([&](auto const& v) {
+				if (valid(v)) {
+					auto const uv = unbox(v);
+					if (uv == delimiter) {
+						if (!dst(part)) {
 							return false;
 						}
+						part.clear();
 					}
 					else {
-						if (!dst(part)) {
-							retval = false;
-							return false;
-						}
+						add_to_container(part, std::move(uv));
 					}
-					part.clear();
-				}
-				else {
-					part.push_back(uv);
 				}
 
-				return retval;
+				return true;
 				});
+
+			return retval && dst(part);
 		};
-		return ::monad2<std::span<T>, decltype(f)>{f};
+		return ::monad2<Container, decltype(f)>{std::move(f)};
 	}
 
+	// TODO use bloom filter
+	//constexpr auto split(range_like auto delimiter) const {
+
 	constexpr auto and_then(auto user_fn) const {
-		auto f = [=, fn = fn](auto dst) {
+		auto f = [=, fn = std::move(fn)](auto dst) {
 			return fn([&](auto v) {
-				if (!valid(v))
-					return true;
-				auto const ub = unbox(v);
-				user_fn(ub);
-				return dst(ub);
+				if (valid(v)) {
+					auto const ub = unbox(v);
+					user_fn(ub);
+					return dst(ub);
+				}
+				return true;
 				});
 			};
-		return ::monad2<value_type, decltype(f)>{f};
+		return ::monad2<T, decltype(f)>{std::move(f)};
 	}
 
 	//
 	// Terminal operations
 	//
 
-	constexpr void then(auto user_fn) const {
-		fn([&](auto v) {
-			if (!valid(v)) return true;
-			user_fn(unbox(v));
+	template<typename UserFn>
+	constexpr void then(UserFn&& user_fn) const {
+		fn([&](auto const& v) {
+			if (valid(v))
+				user_fn(unbox(v));
 			return true;
 			});
 	}
 
-	constexpr auto sum() const {
-		auto total = 0;
-		fn([&](auto v) {
-			if (!valid(v))
-				return true;
-			total += unbox(v);
+	template<typename I = std::int64_t>
+	constexpr I sum(I init = 0) const {
+		fn([&](auto const& v) {
+			if (valid(v))
+				init += unbox(v);
 			return true;
 			});
-		return total;
+		return init;
+	}
+
+	constexpr std::int64_t count() const {
+		std::int64_t c{ 0 };
+		fn([&](auto const& v) {
+			c += valid(v);
+			return true;
+			});
+		return c;
 	}
 
 	template<typename C>
 	constexpr auto to() const {
 		C c;
-		using CT = typename C::value_type;
 
-		then([&]<typename VT>(VT&& v) {
-			static_assert(std::convertible_to<VT, CT>, "Value type is not convertible to container type.");
-
-			if constexpr (requires { c.emplace_back(std::declval<T>()); })
-				c.emplace_back(std::forward<T>(v));
-			else if constexpr (requires { c.push_back(std::declval<T>()); })
-				c.push_back(std::forward<T>(v));
-			else if constexpr (requires { c.emplace(std::declval<T>()); })
-				c.emplace(std::forward<T>(v));
-			else
-				c.insert(c.end(), std::forward<T>(v));
+		then([&](auto v) {
+			add_to_container(c, v);
 			});
 
 		return c;
@@ -306,9 +285,10 @@ public:
 
 	template<template<class...> typename C>
 	constexpr auto to() const {
-		return to<C<value_type>>();
+		return to<C<T>>();
 	}
 };
+
 
 template<range_like T>
 monad2(T const& t) -> monad2<typename T::value_type, decltype(make_fn(t))>;
