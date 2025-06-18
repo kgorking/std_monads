@@ -224,6 +224,19 @@ public:
 		return ::monad2<typename T::value_type, decltype(f)>{std::move(f)};
 	}
 
+	constexpr auto unexpected(auto err_handler) const requires expected_like<T> {
+		auto f = [=, fn = std::move(fn)](auto dst) {
+			return fn([&](in<T> v) {
+				if (!valid(v))
+					err_handler(v.error());
+				else
+					return dst(unbox(v));
+				return true;
+				});
+			};
+		return ::monad2<typename T::value_type, decltype(f)>{std::move(f)};
+	}
+
 	// TODO detect immutable streams and use iterators instead of copying
 	constexpr auto split(auto delimiter) const {
 		constexpr bool use_string_as_container = std::same_as<T, char>;

@@ -8,14 +8,15 @@ auto is_odd = [](int i) { return i % 2 != 0; };
 auto add_three = [](int v) { return v + 3; };
 auto mul_two = [](int v) { return v * 2; };
 auto putval = [](auto val) { std::print("{} ", val); };
+auto puterr = [](std::errc val) { std::print("*{}* ", std::make_error_condition(val).message()); };
 
-std::optional<int> to_int(std::string_view sv) {
+std::expected<int, std::errc> to_int(std::string_view sv) {
 	int r{};
 	auto const [ptr, ec] = std::from_chars(sv.data(), sv.data() + sv.size(), r);
 	if (ec == std::errc())
 		return r;
 	else
-		return std::nullopt;
+		return std::unexpected(ec);
 }
 
 static constexpr std::array const ints = { 1, 2, 3, 4, 5 };
@@ -89,26 +90,24 @@ void test_optionals() {
 	std::print("  optionals.map(to_int): ");
 	monad2(opts).map(to_int).then(putval);
 	std::println();
+
+	std::print("  optionals.map(to_int).on_unexpected(): ");
+	monad2(opts).map(to_int).unexpected(puterr).then(putval);
+	std::println();
 }
 
 void test_map() {
 	std::println("\n== Map ==");
 
-	std::println("  ints.map(is_odd): {}", monad2(ints).map(is_odd).to<std::vector>());
+	std::println("  ints.map(is_odd): {}", monad2(ints).map(is_odd).to<std::vector<int>>());
 
-	auto transform_fn = [](int i) {
-		std::putchar('x');
-		return i;
-		};
+	auto transform_fn = [](int i) { std::putchar('x'); return i; };
 
-	std::print("  ints.map.filter.sum call count       : ");
-	int sum1 = monad2(ints)
-		.map(transform_fn)
-		.filter(is_odd)
-		.sum();
+	std::print("  monad       map.filter.sum call count: ");
+	int sum1 = monad2(ints).map(transform_fn).filter(is_odd).sum();
 	std::println();
 
-	std::print("  std::ranges.map.filter.sum call count: ");
+	std::print("  std::ranges map.filter.sum call count: ");
 	int sum2 = std::ranges::fold_left(ints | std::views::transform(transform_fn) | std::views::filter(is_odd), 0, std::plus{});
 	std::println();
 
@@ -119,40 +118,25 @@ void test_concat_sum() {
 	std::println("\n== Concat and Sum ==");
 
 	std::println("  ints.sum(): {} ", monad2(ints).sum());
-	std::println("  ints.concat(ints).sum(): {} ", monad2(ints)
-		.concat(ints)
-		.sum());
+	std::println("  ints.concat(ints).sum(): {} ", monad2(ints).concat(ints).sum());
 }
 
 void test_join() {
 	std::println("\n== Join ==");
 
-	std::print("  strings.join(): ");
-	monad2(strings)
-		.join()
-		.then(&std::putchar);
-	std::println();
-
-	std::print("  opts.join(): ");
-	monad2(opts)
-		.join()
-		.then(&std::putchar);
-	std::println();
+	std::println("  strings  .join(): {}", monad2(strings).join().to<std::string>());
+	std::println("  optionals.join(): {}", monad2(opts).join().to<std::string>());
 }
 
 void test_join_with() {
 	std::println("\n== Join-with ==");
 
 	std::print("  strings.join_with(\" - \"): ");
-	monad2(strings)
-		.join_with(" - "sv)
-		.then(&std::putchar);
+	monad2(strings).join_with(" - "sv).then(&std::putchar);
 	std::println();
 
 	std::print("  strings.join_with(|): ");
-	monad2(strings)
-		.join_with('|')
-		.then(&std::putchar);
+	monad2(strings).join_with('|').then(&std::putchar);
 	std::println();
 }
 
@@ -183,9 +167,7 @@ void test_to() {
 int main() {
 	std::println("ints: {}", ints);
 	std::println("strings: {}", strings);
-	std::println("optionals: {}", monad2(opts)
-		.value_or("<nullopt>"sv)
-		.to<std::vector>()
+	std::println("optionals: {}", monad2(opts).value_or("<nullopt>"sv).to<std::vector>()
 	);
 
 	std::println();
