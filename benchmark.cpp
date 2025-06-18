@@ -2,7 +2,7 @@ import monad2;
 import std;
 #include "nanobench.h"
 
-constexpr auto number_of_iterations = 1'000'000ull;
+constexpr auto number_of_iterations = 1'000ull;
 
 auto is_odd = [](int i) -> bool { return i & 1; };
 auto add_three = [](int v) { return v + 3; };
@@ -40,7 +40,7 @@ void bench_join_split() {
         .relative(true)
         .minEpochIterations(number_of_iterations);
 
-#ifdef __cpp_lib_ranges_join_with
+#if 1//def __cpp_lib_ranges_join_with
     bench.run("ranges", [&] {
         auto view = strings | std::views::join_with(',') | std::views::split(',');
         int const count = std::ranges::count_if(view, [](auto const&) { return true; });

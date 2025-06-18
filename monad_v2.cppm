@@ -72,7 +72,6 @@ constexpr auto make_one(T const& val) {
 		};
 }
 
-#if 1
 template<range_like T>
 constexpr auto make_fn(T const& rng) {
 	return [&](auto dst) {
@@ -84,22 +83,6 @@ constexpr auto make_fn(T const& rng) {
 		return true;
 		};
 }
-#else
-template<range_like T>
-constexpr auto make_fn(T const& rng) {
-	return [first = rng.begin(), last = rng.end()](auto dst) {
-		auto it = first;
-
-		while (it != last) {
-			if (!dst(*it))
-				return false;
-			++it;
-		}
-
-		return true;
-		};
-}
-#endif
 
 constexpr auto make_fns(range_like auto const&... rng) {
 	return [...fns = make_fn(rng)](auto dst) {
@@ -170,17 +153,20 @@ public:
 		return ::monad2<T, decltype(f)>{std::move(f)};
 	}
 
-	constexpr auto join() const requires range_like<T> {
+	constexpr auto join() const requires range_like<unboxed_t<T>> {
 		auto f = [=, fn = std::move(fn)](auto dst) {
 			return fn([&](in<T> v) {
-				using in_t_val = in<typename T::value_type>;
-				for (in_t_val p : v) {
-					if (!dst(p)) return false;
+				if (valid(v)) {
+					using in_t_val = in<typename unboxed_t<T>::value_type>;
+					for (in_t_val p : unbox(v)) {
+						if (!dst(p))
+							return false;
+					}
 				}
 				return true;
 				});
 			};
-		return ::monad2<typename T::value_type, decltype(f)>{std::move(f)};
+		return ::monad2<typename unboxed_t<T>::value_type, decltype(f)>{std::move(f)};
 	}
 
 	template<typename P>
@@ -221,7 +207,7 @@ public:
 			}
 			return true;
 			};
-		return ::monad2<typename T::value_type, decltype(f)>{std::move(f)};
+		return ::monad2<typename unboxed_t<T>::value_type, decltype(f)>{std::move(f)};
 	}
 	constexpr auto join_with(const char* pattern) = delete REASON("Don't use raw strings. Wrap it in a string_view.");
 
@@ -275,9 +261,8 @@ public:
 		using View = std::conditional_t<is_string_type, std::string_view, std::span<T>>;
 		using Container = std::array<T, MaxSplitSize>;
 
-		auto f = [&](auto dst) {
+		auto f = [=, fn = std::move(fn)](auto dst) {
 			Container part;
-			auto data = part.data();
 			std::size_t i = 0;
 
 			bool const retval = fn([&](in<T> v) {
@@ -287,12 +272,11 @@ public:
 						if (!dst(View{ part.data(), i })) {
 							return false;
 						}
-						data = part.data();
 						i = 0;
 					}
 					else {
-						if (data != &part.back()) {
-							data[i++] = std::move(uv);
+						if (i < part.size()) {
+							part[i++] = uv;
 						}
 					}
 				}

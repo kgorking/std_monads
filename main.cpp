@@ -134,9 +134,9 @@ void test_join() {
 	std::println();
 
 	std::print("  opts.join(): ");
-	monad2(strings)
+	monad2(opts)
 		.join()
-		.then([&](auto) {});
+		.then(&std::putchar);
 	std::println();
 }
 
