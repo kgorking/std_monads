@@ -50,6 +50,15 @@ void test_split() {
 	std::println("  ints.split(5): {}", monad2(ints).split(5).to<std::vector>());
 }
 
+void test_split_fast() {
+	std::println("\n== Split Fast(8) ==");
+
+	// split_fast produces std::span, so a conversion is needed to std::vector
+	std::println("  ints.split_fast(1): {}", monad2(ints).split_fast<8>(1).as<std::vector<int>>().to<std::vector>());
+	std::println("  ints.split_fast(3): {}", monad2(ints).split_fast<8>(3).as<std::vector<int>>().to<std::vector>());
+	std::println("  ints.split_fast(5): {}", monad2(ints).split_fast<8>(5).as<std::vector<int>>().to<std::vector>());
+}
+
 void test_join_split() {
 	std::println("\n== Join/Split ==");
 
@@ -184,6 +193,7 @@ int main() {
 	test_filter();
 	test_count();
 	test_split();
+	test_split_fast();
 	test_join_split();
 	test_map();
 	test_optionals();

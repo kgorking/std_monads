@@ -2043,8 +2043,8 @@ void gatherStabilityInformation(std::vector<std::string>& warnings, std::vector<
         for (long id = 0; id < nprocs; ++id) {
             auto idStr = detail::fmt::to_s(static_cast<std::uint64_t>(id));
             auto sysCpu = "/sys/devices/system/cpu/cpu" + idStr;
-            auto minFreq = parseFile<int64_t>(sysCpu + "/cpufreq/scaling_min_freq", nullptr);
-            auto maxFreq = parseFile<int64_t>(sysCpu + "/cpufreq/scaling_max_freq", nullptr);
+            auto minFreq = parseFile<std::int64_t>(sysCpu + "/cpufreq/scaling_min_freq", nullptr);
+            auto maxFreq = parseFile<std::int64_t>(sysCpu + "/cpufreq/scaling_max_freq", nullptr);
             if (minFreq != maxFreq) {
                 auto minMHz = d(minFreq) / 1000.0;
                 auto maxMHz = d(maxFreq) / 1000.0;
@@ -2476,7 +2476,7 @@ public:
 
         auto const numBytes = sizeof(std::uint64_t) * mCounters.size();
         auto ret = read(mFd, mCounters.data(), numBytes);
-        mHasError = ret != static_cast<std::ssize_t>(numBytes);
+        mHasError = ret != static_cast<ssize_t>(numBytes);
     }
 
     void updateResults(std::uint64_t numIters);
@@ -2500,7 +2500,7 @@ public:
     void calibrate(Op&& op) {
         // clear current calibration data,
         for (auto& v : mCalibratedOverhead) {
-            v = UINT64_C(0);
+            v = (0ULL);
         }
 
         // create new calibration data
@@ -2601,7 +2601,7 @@ ANKERL_NANOBENCH_NO_SANITIZE("integer", "undefined")
 void LinuxPerformanceCounters::updateResults(std::uint64_t numIters) {
     // clear old data
     for (auto& id_value : mIdToTarget) {
-        *id_value.second.targetValue = UINT64_C(0);
+        *id_value.second.targetValue = (0ULL);
     }
 
     if (mHasError) {
