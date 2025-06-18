@@ -27,11 +27,8 @@ static const     std::vector<std::optional<std::string_view>> opts{ "1234", "15 
 void test_filter() {
 	std::println("\n== Filter ==");
 
-	std::println("  ints.filter(is_odd): {}",
-		monad2(ints).filter(is_odd).to<std::vector>());
-
-	std::println("  strings.filter(size > 2): {}",
-		monad2(strings).filter([](std::string_view s) { return s.size() > 2; }).to<std::vector>());
+	std::println("  ints.filter(is_odd)     : {}", monad2(ints).filter(is_odd).to<std::vector>());
+	std::println("  strings.filter(size > 2): {}", monad2(strings).filter([](std::string_view s) { return s.size() > 2; }).to<std::vector>());
 }
 
 void test_count() {
@@ -132,7 +129,7 @@ void test_join_with() {
 	std::println("\n== Join-with ==");
 
 	std::print("  strings.join_with(\" - \"): ");
-	monad2(strings).join_with(" - "sv).then(&std::putchar);
+	monad2(strings).join_with(" - ").then(&std::putchar);
 	std::println();
 
 	std::print("  strings.join_with(|): ");

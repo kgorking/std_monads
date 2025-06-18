@@ -209,7 +209,10 @@ public:
 			};
 		return ::monad2<typename unboxed_t<T>::value_type, decltype(f)>{std::move(f)};
 	}
-	constexpr auto join_with(const char* pattern) = delete REASON("Don't use raw strings. Wrap it in a string_view.");
+
+	constexpr auto join_with(const char* pattern) const {
+		return join_with(std::string_view{ pattern });
+	}
 
 	template<typename Other>
 	constexpr auto value_or(Other&& other) const requires optional_like<T> {
@@ -237,7 +240,6 @@ public:
 		return ::monad2<typename T::value_type, decltype(f)>{std::move(f)};
 	}
 
-	// TODO detect immutable streams and use iterators instead of copying
 	constexpr auto split(auto delimiter) const {
 		constexpr bool use_string_as_container = std::same_as<T, char>;
 		using Container = std::conditional_t<use_string_as_container, std::basic_string<T>, std::vector<T>>;
