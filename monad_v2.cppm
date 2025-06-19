@@ -43,7 +43,7 @@ constexpr bool has_value(T const& v) {
 }
 
 template<typename T>
-constexpr auto unwrap_value(T const& opt) {
+constexpr auto unwrap(T const& opt) {
 	if constexpr (optional_like<T>) {
 		return opt.value();
 	}
@@ -63,13 +63,13 @@ constexpr auto unbox_or(T const& opt) {
 }
 
 template<typename T>
-using unwrapped_t = decltype(unwrap_value(std::declval<T>()));
+using unwrapped_t = decltype(unwrap(std::declval<T>()));
 
 template<typename T>
 constexpr auto make_one(T const& val) {
 	return [val](auto dst) {
 		if(has_value(val))
-			return dst(unwrap_value(val));
+			return dst(unwrap(val));
 		return true;
 		};
 }
@@ -79,7 +79,7 @@ constexpr auto make_fn(T const& rng) {
 	return [&](auto dst) {
 		for (in<typename T::value_type> v : rng) {
 			if(has_value(v))
-				if (!dst(unwrap_value(v)))
+				if (!dst(unwrap(v)))
 					return false;
 		}
 
@@ -111,7 +111,7 @@ public:
 		auto f = [=, fn = std::move(fn)](auto dst) {
 			return fn([&](in<T> v) {
 				if (has_value(v)) {
-					in<unwrapped_t<T>> uv = unwrap_value(v);
+					in<unwrapped_t<T>> uv = unwrap(v);
 					if (pred(uv))
 						return dst(uv);
 				}
@@ -128,7 +128,7 @@ public:
 		auto f = [=, fn = std::move(fn)](auto dst) {
 			return fn([&](in<T> v) {
 				if (has_value(v))
-					return dst(std::invoke(mf, unwrap_value(v)));
+					return dst(std::invoke(mf, unwrap(v)));
 				return true;
 				});
 			};
@@ -142,7 +142,7 @@ public:
 			decltype(n) count = 0;
 			return fn([&](in<T> v) {
 				if(has_value(v))
-					return count++ < n && dst(unwrap_value(v));
+					return count++ < n && dst(unwrap(v));
 				return true;
 				});
 			};
@@ -156,7 +156,7 @@ public:
 			decltype(n) count = 0;
 			return fn([&](in<T> v) {
 				if(has_value(v))
-					return count++ < n || dst(unwrap_value(v));
+					return count++ < n || dst(unwrap(v));
 				return true;
 				});
 			};
@@ -174,7 +174,7 @@ public:
 	}
 
 	template<typename OtherT, typename OtherFn>
-		requires std::same_as<T, OtherT>
+		requires std::same_as<unwrapped_t<T>, unwrapped_t<OtherT>>
 	constexpr auto concat(monad2<OtherT, OtherFn> m) const {
 		auto f = [fn = std::move(fn), m](auto dst) {
 			return fn(dst) && m.fn(dst);
@@ -187,7 +187,7 @@ public:
 			return fn([&](in<T> v) {
 				if (has_value(v)) {
 					using in_t_val = in<typename unwrapped_t<T>::value_type>;
-					for (in_t_val p : unwrap_value(v)) {
+					for (in_t_val p : unwrap(v)) {
 						if (!dst(p))
 							return false;
 					}
@@ -199,14 +199,15 @@ public:
 	}
 
 	template<typename P>
-	constexpr auto join_with(P&& pattern) const requires range_like<T> {
+	constexpr auto join_with(P&& pattern) const {
 		auto f = [=, fn = std::move(fn)](auto dst) {
 			auto send_to_dst = [&]<typename DstT = T>(in<DstT> l) {
 				if constexpr (range_like<DstT>) {
 					using in_dst_t = in<typename DstT::value_type>;
 					for (in_dst_t p : l) {
-						if (!dst(p))
-							return false;
+						if(has_value(p))
+							if (!dst(unwrap(p)))
+								return false;
 					}
 					return true;
 				}
@@ -215,13 +216,13 @@ public:
 				}
 				};
 
-			alignas(in<T>) std::byte last[sizeof(in<T>)];
+			T test;
 
 			bool first = true;
 			bool const retval = fn([&](in<T> v) {
 				if (first) {
 					first = false;
-					std::memcpy(&last, &v, sizeof(v));
+					test = v;
 					return true;
 				}
 				else {
@@ -229,22 +230,30 @@ public:
 					in<T>* ptr = std::start_lifetime_as<in<T>>(last);
 					bool const cont = (send_to_dst(*ptr) && send_to_dst.template operator()<P>(pattern));
 #else
-					bool const cont = (send_to_dst(std::bit_cast<in<T>>(last)) && send_to_dst.template operator() < P > (pattern));
+					bool const cont = (send_to_dst(test) && send_to_dst.template operator() < P > (pattern));
+					//bool const cont = (send_to_dst(std::bit_cast<in<T>>(last)) && send_to_dst.template operator() < P > (pattern));
 #endif
-					std::memcpy(&last, &v, sizeof(v));
+					//std::memcpy(&last, &v, sizeof(v));
+					test = v;
 					return cont;
 				}
 				});
 
 			if (retval) {
-				return send_to_dst(reinterpret_cast<in<T>&>(last));
+				return send_to_dst(test);
 			}
 			return true;
 			};
-		return monad2<typename unwrapped_t<T>::value_type, decltype(f)>{std::move(f)};
+		if constexpr (range_like<unwrapped_t<T>>) {
+			return monad2<typename unwrapped_t<T>::value_type, decltype(f)>{std::move(f)};
+		}
+		else {
+			return monad2<unwrapped_t<T>, decltype(f)>{std::move(f)};
+		}
 	}
 
-	constexpr auto join_with(const char* pattern) const {
+	template<int S>
+	constexpr auto join_with(const char (&pattern)[S]) const {
 		return join_with(std::string_view{ pattern });
 	}
 
@@ -255,7 +264,7 @@ public:
 				if (!has_value(v))
 					return dst(other);
 				else
-					return dst(unwrap_value(v));
+					return dst(unwrap(v));
 				});
 			};
 		return monad2<typename T::value_type, decltype(f)>{std::move(f)};
@@ -267,7 +276,7 @@ public:
 				if (!has_value(v))
 					err_handler(v.error());
 				else
-					return dst(unwrap_value(v));
+					return dst(unwrap(v));
 				return true;
 				});
 			};
@@ -283,7 +292,7 @@ public:
 
 			bool const retval = fn([&](in<T> v) {
 				if (has_value(v)) {
-					in<unwrapped_t<T>> uv = unwrap_value(v);
+					in<unwrapped_t<T>> uv = unwrap(v);
 					if (uv == delimiter) {
 						if (!dst(part)) {
 							return false;
@@ -316,7 +325,7 @@ public:
 
 			bool const retval = fn([&](in<T> v) {
 				if (has_value(v)) {
-					in<unwrapped_t<T>> uv = unwrap_value(v);
+					in<unwrapped_t<T>> uv = unwrap(v);
 					if (uv == delimiter) {
 						if (!dst(View{ part.data(), i })) {
 							return false;
@@ -349,12 +358,12 @@ public:
 			return fn([&](in<T> v) {
 				if (has_value(v)) {
 					if constexpr (std::constructible_from<Cast, unwrapped_t<T>>) {
-						return dst(Cast{ unwrap_value(v) });
+						return dst(Cast{ unwrap(v) });
 					}
 					else {
-						return dst(Cast{ std::from_range, unwrap_value(v) });
+						return dst(Cast{ std::from_range, unwrap(v) });
 					}
-					//return dst(Cast{ unwrap_value(v) });
+					//return dst(Cast{ unwrap(v) });
 				}
 				return true;
 				});
@@ -366,7 +375,7 @@ public:
 		auto f = [=, fn = std::move(fn)](auto dst) {
 			return fn([&](in<T> v) {
 				if (has_value(v)) {
-					in<unwrapped_t<T>> const ub = unwrap_value(v);
+					in<unwrapped_t<T>> const ub = unwrap(v);
 					user_fn(ub);
 					return dst(ub);
 				}
@@ -380,7 +389,7 @@ public:
 		auto f = [=, fn = std::move(fn)](auto dst) {
 			return fn([&](in<T> v) {
 				if (has_value(v)) {
-					if (!dst(unwrap_value(v)))
+					if (!dst(unwrap(v)))
 						return false;
 				}
 				return true;
@@ -397,7 +406,7 @@ public:
 	constexpr void then(UserFn&& user_fn) const {
 		fn([&](in<T> v) {
 			if (has_value(v))
-				user_fn(unwrap_value(v));
+				user_fn(unwrap(v));
 			return true;
 			});
 	}
@@ -427,7 +436,7 @@ public:
 
 		fn([&](in<T> v) {
 			if (has_value(v))
-				add_to_container(c, unwrap_value(v));
+				add_to_container(c, unwrap(v));
 			return true;
 			});
 
@@ -441,7 +450,7 @@ public:
 
 		fn([&](in<T> v) {
 			if (has_value(v))
-				add_to_container(c, unwrap_value(v));
+				add_to_container(c, unwrap(v));
 			return true;
 			});
 

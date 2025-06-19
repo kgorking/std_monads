@@ -142,6 +142,10 @@ void test_join_with() {
 	std::print("  strings.join_with(|): ");
 	monad2(strings).join_with('|').then(&std::putchar);
 	std::println();
+
+	std::print("  ints.join_with(0): ");
+	monad2(ints).join_with(0).then(putval);
+	std::println();
 }
 
 void test_take() {
