@@ -19,9 +19,9 @@ std::expected<int, std::errc> to_int(std::string_view sv) {
 		return std::unexpected(ec);
 }
 
-static constexpr std::array const ints = { 1, 2, 3, 4, 5 };
-static constexpr std::array strings{ "This"sv, "is"sv, "a"sv, "test."sv };
-static const     std::vector<std::optional<std::string_view>> opts{ "1234", "15 foo", "bar", std::nullopt, "42", "5000000000", " 5", std::nullopt, "-43" };
+static constexpr auto ints = std::array{ 1, 2, 3, 4, 5 };
+static constexpr auto strings = std::array{ "This"sv, "is"sv, "a"sv, "test."sv };
+static constexpr auto opts = std::to_array<std::optional<std::string_view>>({ "1234", "15 foo", "bar", std::nullopt, "42", "5000000000", " 5", std::nullopt, "-43" });
 
 
 void test_filter() {
@@ -88,7 +88,7 @@ void test_optionals() {
 	monad2(opts).map(to_int).then(putval);
 	std::println();
 
-	std::print("  optionals.map(to_int).on_unexpected(): ");
+	std::print("  optionals.map(to_int).unexpected(): ");
 	monad2(opts).map(to_int).unexpected(puterr).then(putval);
 	std::println();
 }
@@ -116,6 +116,13 @@ void test_concat_sum() {
 
 	std::println("  ints.sum(): {} ", monad2(ints).sum());
 	std::println("  ints.concat(ints).sum(): {} ", monad2(ints).concat(ints).sum());
+}
+
+void test_concat_monad() {
+	std::println("\n== Concat monads ==");
+	
+	auto v = monad2(ints).concat(monad2(opts).map(to_int).unbox()).to<std::vector>();
+	std::println("  ints.concat(opts.map(to_int)): {} ", v);
 }
 
 void test_join() {
@@ -178,6 +185,7 @@ int main() {
 	test_optionals();
 	test_one_value();
 	test_concat_sum();
+	test_concat_monad();
 	test_join();
 	test_join_with();
 	test_take();

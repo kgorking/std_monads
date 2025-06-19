@@ -11,9 +11,9 @@ auto mul_two = [](int v) { return v * 2; };
 using namespace std::literals;
 using namespace ankerl::nanobench;
 
-static constexpr auto const ints = std::array{ 1, 2, 3, 4, 5 };
-static constexpr auto const strings = std::array { "This"sv, "is"sv, "a"sv, "test."sv };
-static           auto const opts = std::vector<std::optional<std::string_view>> { "1234", "15 foo", "bar", std::nullopt, "42", "5000000000", " 5", std::nullopt, "-43" };
+static constexpr auto ints = std::array{ 1, 2, 3, 4, 5 };
+static constexpr auto strings = std::array{ "This"sv, "is"sv, "a"sv, "test."sv };
+static constexpr auto opts = std::to_array<std::optional<std::string_view>>({ "1234", "15 foo", "bar", std::nullopt, "42", "5000000000", " 5", std::nullopt, "-43" });
 
 
 void bench_map_filter_sum() {
@@ -40,7 +40,7 @@ void bench_join_split() {
         .relative(true)
         .minEpochIterations(number_of_iterations);
 
-#if 1//def __cpp_lib_ranges_join_with
+#ifdef __cpp_lib_ranges_join_with
     bench.run("ranges", [&] {
         auto view = strings | std::views::join_with(',') | std::views::split(',');
         int const count = std::ranges::count_if(view, [](auto const&) { return true; });
