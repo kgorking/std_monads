@@ -43,7 +43,7 @@ void test_count() {
 void test_split() {
 	std::println("\n== Split ==");
 
-	std::println("  ints.split(1): {}", monad2(ints).split(1).to<std::vector>());
+	std::println("  ints.split(1): {}", monad2(ints).split(0).to<std::vector>());
 	std::println("  ints.split(3): {}", monad2(ints).split(3).to<std::vector>());
 	std::println("  ints.split(5): {}", monad2(ints).split(5).to<std::vector>());
 }

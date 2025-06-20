@@ -53,13 +53,15 @@ static_assert([] {
 // Test take
 static_assert([] {
 	return 3 == monad2(ints).take(3).count() &&
-		   5 == monad2(opts).take(5).count();
+		   5 == monad2(opts).take(5).count() &&
+		   0 == monad2(opts).take(-3).count();
 	}());
 
 // Test drop
 static_assert([] {
 	return 2 == monad2(ints).drop(3).count() &&
-		   2 == monad2(opts).drop(5).count();
+		   2 == monad2(opts).drop(5).count() &&
+		   0 == monad2(opts).drop(-3).count();
 	}());
 
 // Test concat
@@ -88,4 +90,55 @@ static_assert([] {
 		"This - is - a - test."sv == monad2(strings).join_with(" - ").to<std::string>() &&
 		"This|is|a|test."sv == monad2(strings).join_with('|').to<std::string>() &&
 		std::vector{ 1,0,2,0,3,0,4,0,5 } == monad2(ints).join_with(0).to<std::vector>();
+	}());
+
+// Test split
+static_assert([] {
+	auto empty = std::vector<int>{};
+
+	auto const actual1 = monad2(ints).split(0).to<std::vector>();
+	auto const actual2 = monad2(ints).split(3).to<std::vector>();
+	auto const actual3 = monad2(ints).split(5).to<std::vector>();
+
+	return
+		(actual1.size() == 1 && actual1[0].size() == 5) &&
+		(actual2.size() == 2 && actual2[0].size() == 2 && actual2[1].size() == 2) &&
+		(actual3.size() == 2 && actual3[0].size() == 4 && actual3[1].empty());
+	}());
+
+// Test split fast
+static_assert([] {
+	auto empty = std::vector<int>{};
+
+	auto const actual1 = monad2(ints).split_fast<8>(0).to<std::vector>();
+	auto const actual2 = monad2(ints).split_fast<8>(3).to<std::vector>();
+	auto const actual3 = monad2(ints).split_fast<8>(5).to<std::vector>();
+
+	return
+		(actual1.size() == 1 && actual1[0].size() == 5) &&
+		(actual2.size() == 2 && actual2[0].size() == 2 && actual2[1].size() == 2) &&
+		(actual3.size() == 2 && actual3[0].size() == 4 && actual3[1].empty());
+	}());
+
+// Test large object, copying it should not be allowed
+struct LargeObject {
+	char data[32];
+
+	LargeObject() = default;
+	LargeObject(LargeObject const&) = delete;
+	LargeObject(LargeObject&&) = default;
+	LargeObject& operator=(LargeObject const&) = delete;
+};
+
+static_assert([] {
+	std::vector<LargeObject> large_objects;
+	large_objects.emplace_back();
+	large_objects.push_back({});
+
+	monad2(large_objects)
+		.filter		([](LargeObject const&) { return true; })
+		.map		([](LargeObject const&) { return LargeObject{}; })
+		.and_then	([](LargeObject const&) { return 11; })
+		.then		([](LargeObject const&) { return 42; });
+	return true;
 	}());

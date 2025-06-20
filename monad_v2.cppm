@@ -9,13 +9,13 @@ import std;
 #define REASON(x)
 #endif
 
-template<typename T> concept range_like = requires(T rng) { rng.begin(); rng.end(); };
-template<typename T> concept optional_like = requires(T opt) { opt.has_value(); opt.value(); };
-template<typename T> concept expected_like = optional_like<T> && requires(T exp) { exp.error(); };
-template<typename Fn> concept function_like = requires(Fn fn) { fn([](auto) -> bool { return true; }); };
+template<typename T> concept range_like = requires(T const& rng) { rng.begin(); rng.end(); };
+template<typename T> concept optional_like = requires(T const& opt) { opt.has_value(); opt.value(); };
+template<typename T> concept expected_like = optional_like<T> && requires(T const& exp) { exp.error(); };
+template<typename Fn> concept function_like = std::invocable<Fn, decltype([]<typename T>(T const&) -> bool { return true; })>;
 
 template<typename T>
-using in = std::conditional_t<std::is_trivially_copyable_v<T> && sizeof(T) <= 2 * sizeof(void*), T, T const&>;
+using in = std::conditional_t<std::is_trivially_copyable_v<T> && sizeof(T) <= 2 * sizeof(void*), T const, T const&>;
 
 template<typename Container>
 	requires requires { typename Container::value_type;  }
@@ -33,7 +33,7 @@ constexpr void add_to_container(Container& c, in<typename Container::value_type>
 }
 
 template<typename T>
-constexpr bool has_value(T const& v) {
+constexpr bool has_value(T const& v) noexcept {
 	if constexpr (optional_like<T>) {
 		return v.has_value();
 	}
@@ -43,7 +43,7 @@ constexpr bool has_value(T const& v) {
 }
 
 template<typename T>
-constexpr auto unwrap(T const& opt) {
+constexpr auto const& unwrap(T const& opt) noexcept {
 	if constexpr (optional_like<T>) {
 		return opt.value();
 	}
@@ -53,17 +53,17 @@ constexpr auto unwrap(T const& opt) {
 }
 
 template<auto OrValue, typename T>
-constexpr auto unbox_or(T const& opt) {
+constexpr auto unbox_or(T const& v) noexcept {
 	if constexpr (optional_like<T>) {
-		return opt.value_or(OrValue);
+		return v.value_or(OrValue);
 	}
 	else {
-		return opt;
+		return v;
 	}
 }
 
 template<typename T>
-using unwrapped_t = decltype(unwrap(std::declval<T>()));
+using unwrapped_t = std::remove_cvref_t<decltype(unwrap(std::declval<T>()))>;
 
 template<typename T>
 constexpr auto make_one(T const& val) {
@@ -84,12 +84,6 @@ constexpr auto make_fn(T const& rng) {
 		}
 
 		return true;
-		};
-}
-
-constexpr auto make_fns(range_like auto const&... rng) {
-	return [...fns = make_fn(rng)](auto dst) {
-		return (fns(dst) && ...);
 		};
 }
 
@@ -123,7 +117,7 @@ public:
 
 	template<std::invocable<unwrapped_t<T>> MapFn>
 	constexpr auto map(MapFn mf) const {
-		using Result = std::invoke_result_t<MapFn, unwrapped_t<T>>;
+		using Result = std::invoke_result_t<MapFn, unwrapped_t<in<T>>>;
 
 		auto f = [=, fn = std::move(fn)](auto dst) {
 			return fn([&](in<T> v) {
@@ -136,9 +130,10 @@ public:
 	}
 
 	constexpr auto take(std::signed_integral auto n) const {
-		if (n <= 0) throw;
-
 		auto f = [=, fn = std::move(fn)](auto dst) {
+			if (n <= 0)
+				return true;
+
 			decltype(n) count = 0;
 			return fn([&](in<T> v) {
 				if(has_value(v))
@@ -150,9 +145,10 @@ public:
 	}
 
 	constexpr auto drop(std::signed_integral auto n) const {
-		if (n <= 0) throw;
-
 		auto f = [=, fn = std::move(fn)](auto dst) {
+			if (n <= 0)
+				return true;
+
 			decltype(n) count = 0;
 			return fn([&](in<T> v) {
 				if(has_value(v))
@@ -216,31 +212,24 @@ public:
 				}
 				};
 
-			T test;
+			T last;
 
 			bool first = true;
 			bool const retval = fn([&](in<T> v) {
 				if (first) {
 					first = false;
-					test = v;
+					last = v;
 					return true;
 				}
 				else {
-#ifdef __cpp_lib_start_lifetime_as	
-					in<T>* ptr = std::start_lifetime_as<in<T>>(last);
-					bool const cont = (send_to_dst(*ptr) && send_to_dst.template operator()<P>(pattern));
-#else
-					bool const cont = (send_to_dst(test) && send_to_dst.template operator() < P > (pattern));
-					//bool const cont = (send_to_dst(std::bit_cast<in<T>>(last)) && send_to_dst.template operator() < P > (pattern));
-#endif
-					//std::memcpy(&last, &v, sizeof(v));
-					test = v;
+					bool const cont = (send_to_dst(last) && send_to_dst.template operator() < P > (pattern));
+					last = v;
 					return cont;
 				}
 				});
 
 			if (retval) {
-				return send_to_dst(test);
+				return send_to_dst(last);
 			}
 			return true;
 			};
@@ -255,32 +244,6 @@ public:
 	template<int S>
 	constexpr auto join_with(const char (&pattern)[S]) const {
 		return join_with(std::string_view{ pattern });
-	}
-
-	template<typename Other>
-	constexpr auto value_or(Other const& other) const requires optional_like<T> {
-		auto f = [=, fn = std::move(fn)](auto dst) {
-			return fn([&](in<T> v) {
-				if (!has_value(v))
-					return dst(other);
-				else
-					return dst(unwrap(v));
-				});
-			};
-		return monad2<typename T::value_type, decltype(f)>{std::move(f)};
-	}
-
-	constexpr auto unexpected(auto err_handler) const requires expected_like<T> {
-		auto f = [=, fn = std::move(fn)](auto dst) {
-			return fn([&](in<T> v) {
-				if (!has_value(v))
-					err_handler(v.error());
-				else
-					return dst(unwrap(v));
-				return true;
-				});
-			};
-		return monad2<typename T::value_type, decltype(f)>{std::move(f)};
 	}
 
 	constexpr auto split(auto delimiter) const {
@@ -363,7 +326,6 @@ public:
 					else {
 						return dst(Cast{ std::from_range, unwrap(v) });
 					}
-					//return dst(Cast{ unwrap(v) });
 				}
 				return true;
 				});
@@ -371,11 +333,37 @@ public:
 		return monad2<Cast, decltype(f)>{std::move(f)};
 	}
 
+	template<typename Other>
+	constexpr auto value_or(Other const& other) const requires optional_like<T> {
+		auto f = [=, fn = std::move(fn)](auto dst) {
+			return fn([&](in<T> v) {
+				if (!has_value(v))
+					return dst(other);
+				else
+					return dst(unwrap(v));
+				});
+			};
+		return monad2<typename T::value_type, decltype(f)>{std::move(f)};
+	}
+
+	constexpr auto unexpected(auto err_handler) const requires expected_like<T> {
+		auto f = [=, fn = std::move(fn)](auto dst) {
+			return fn([&](in<T> v) {
+				if (!has_value(v))
+					err_handler(v.error());
+				else
+					return dst(unwrap(v));
+				return true;
+				});
+			};
+		return monad2<typename T::value_type, decltype(f)>{std::move(f)};
+	}
+
 	constexpr auto and_then(auto user_fn) const {
 		auto f = [=, fn = std::move(fn)](auto dst) {
 			return fn([&](in<T> v) {
 				if (has_value(v)) {
-					in<unwrapped_t<T>> const ub = unwrap(v);
+					in<unwrapped_t<T>> ub = unwrap(v);
 					user_fn(ub);
 					return dst(ub);
 				}
@@ -445,16 +433,7 @@ public:
 
 	template<template<class...> typename C>
 	constexpr auto to() const {
-		//return to<C<unwrapped_t<T>>>();
-		C<unwrapped_t<T>> c;
-
-		fn([&](in<T> v) {
-			if (has_value(v))
-				add_to_container(c, unwrap(v));
-			return true;
-			});
-
-		return c;
+		return to<C<unwrapped_t<T>>>();
 	}
 };
 
