@@ -6,3 +6,6 @@
 /out
 /vc140.pdb
 /std.ifc
+/std.ixx.obj
+/std.ixx.obj.ddi
+/std.ixx.obj.modmap
