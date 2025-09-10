@@ -57,18 +57,6 @@ static void test_split_fast() {
 	std::println("  ints.split_fast(5): {}", as_monad(ints).join().split_fast<8>(5).as<std::vector<int>>().to<std::vector>());
 }
 
-static void test_join_split() {
-	std::println("\n== Join/Split ==");
-
-	auto joined = as_monad(strings).join_with(","sv).join().to<std::string>();
-	std::println("  strings.join_with(,): {:?}", joined);
-
-	auto split = as_monad(joined).join().split(',').to<std::vector>();
-	std::println("  {:?}.split(,): {}", joined, split);
-
-	std::println("  strings.join_with(,).split(,): {}", as_monad(strings).join_with(","sv).join().split(',').to<std::vector>());
-}
-
 static void test_one_value() {
 	std::println("\n== Monad of single value ==");
 
@@ -118,19 +106,20 @@ static void test_concat_sum() {
 	std::println("  ints.concat(ints).sum(): {} ", as_monad(ints).concat(ints).join().sum());
 }
 
-static void test_concat_monad() {
-	std::println("\n== Concat monads ==");
+static void test_link_monad() {
+	std::println("\n== Link monads ==");
 	
 	auto m = as_monad(opts).join().map(to_int).unbox();
+	std::println("  m = opts.map(to_int): {} ", m.to<std::vector>());
 	auto v = as_monad(ints).join().link(m).to<std::vector>();
-	std::println("  ints.concat(opts.map(to_int)): {} ", v);
+	std::println("  ints.link(m): {} ", v);
 }
 
 static void test_join() {
 	std::println("\n== Join ==");
 
-	std::println("  strings  .join(): {}", as_monad(strings).join().to<std::string>());
-	std::println("  optionals.join(): {}", as_monad(opts).join().to<std::string>());
+	std::println("  strings  .join(): {}", as_monad(strings).join().join().to<std::string>());
+	std::println("  optionals.join(): {}", as_monad(opts).join().join().to<std::string>());
 }
 
 static void test_join_with() {
@@ -140,7 +129,7 @@ static void test_join_with() {
 	as_monad(strings).join_with(" - "sv).join().then(&std::putchar);
 	std::println();
 
-	std::print("  strings.join_with(|): ");
+	std::print("  strings.join_with(\"|\"): ");
 	as_monad(strings).join_with("|"sv).join().then(&std::putchar);
 	std::println();
 
@@ -149,11 +138,21 @@ static void test_join_with() {
 	std::println();
 }
 
+static void test_join_split() {
+	std::println("\n== Join/Split ==");
+
+	auto joined = as_monad(strings).join_with(","sv).join().to<std::string>();
+	std::println("  strings.join_with(,): {:?}", joined);
+
+	auto split = as_monad(joined).join().split(',').to<std::vector>();
+	std::println("  {:?}.split(,): {}", joined, split);
+}
+
 static void test_take() {
 	std::println("\n== Take ==");
 
 	std::print("  ints.take(3): ");
-	as_monad(ints).take(3).then(putval);
+	as_monad(ints).join().take(3).then(putval);
 	std::println();
 }
 
@@ -161,7 +160,7 @@ static void test_drop() {
 	std::println("\n== Drop ==");
 
 	std::print("  ints.drop(3): ");
-	as_monad(ints).drop(3).then(putval);
+	as_monad(ints).join().drop(3).then(putval);
 	std::println();
 }
 
@@ -176,20 +175,20 @@ static void test_to() {
 static void test_async() {
 	std::println("\n== Async ==");
 
-	std::print("  strings.join.async.print: ");
+	std::print("  strings.async.print: ");
 	as_monad(strings).join().join().async().then(&std::putchar);
 	std::println();
 
-	std::atomic<std::size_t> count = 0;
-	as_monad(opts).join().async().map(to_int).then([&count](int c) { count += c; });
-	std::println("  opts.async.map(to_int).sum: {}", count.load());
+	std::atomic<std::size_t> sum = 0;
+	as_monad(opts).join().async().map(to_int).then([&sum](int c) { sum += c; });
+	std::println("  opts.async.map(to_int).sum: {}", sum.load());
 	std::println("  opts.      map(to_int).sum: {}", as_monad(opts).join().map(to_int).sum());
 }
 
 int main() {
 	std::println("ints: {}", ints);
 	std::println("strings: {}", strings);
-	std::println("optionals: {}", as_monad(opts).join().value_or("<nullopt>"sv).to<std::vector>());
+	std::println("optionals: {}", as_monad(opts).join().value_or("<>"sv).to<std::vector>());
 
 	std::println();
 
@@ -197,14 +196,14 @@ int main() {
 	test_count();
 	test_split();
 	test_split_fast();
-	test_join_split();
 	test_map();
 	test_optionals();
 	test_one_value();
 	test_concat_sum();
-	test_concat_monad();
+	test_link_monad();
 	test_join();
 	test_join_with();
+	test_join_split();
 	test_take();
 	test_drop();
 	test_to();

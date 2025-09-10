@@ -12,9 +12,8 @@ auto size_over_4 = [](std::string_view s) { return s.size() > 4; };
 
 static constexpr auto ints = std::array{ 1, 2, 3, 4, 5 };
 static constexpr auto strings = std::array{ "This"sv, "is"sv, "a"sv, "test."sv };
-static constexpr auto opt_ints = std::to_array<std::optional<int>>({
-	1, 2, 3, std::nullopt, 5, 6, std::nullopt, 8
-	});
+static constexpr auto splittable = "This*is*a*test."sv;
+static constexpr auto opt_ints = std::to_array<std::optional<int>>({1, 2, 3, std::nullopt, 5, 6, std::nullopt, 8});
 static constexpr auto opts = std::to_array<std::optional<std::string_view>>({
 	"1234",
 	"15 foo",
@@ -47,7 +46,7 @@ static_assert([] {
 // Test map
 static_assert([] {
 	return 30 == as_monad(ints).join().map(add_three).sum() &&
-		    2 == as_monad(opts).join().map(size_over_4).sum();
+		    2 == as_monad(opts).join().map(size_over_4).sum<int>();
 	}());
 
 // Test take
@@ -67,8 +66,8 @@ static_assert([] {
 // Test concat
 static_assert([] {
 	return 
-		30 == as_monad(ints).concat(ints).join().sum() /*&&
-		40 == as_monad(ints).concat(opt_ints).join().sum()*/;
+		30 == as_monad(ints).concat(ints).join().sum() &&
+		40 == as_monad(ints).concat(opt_ints).join().sum();
 	}());
 
 // Test concat monad
@@ -82,6 +81,7 @@ static_assert([] {
 static_assert([] {
 	return
 		"Thisisatest."sv == as_monad(strings).join().join().to<std::string>() &&
+		"Thisisatest."sv == as_monad(std::optional{ strings }).join().join().to<std::string>() &&
 		"123415 foobar425000000000 5-43"sv == as_monad(opts).join().join().to<std::string>();
 	}());
 
@@ -89,13 +89,19 @@ static_assert([] {
 static_assert([] {
 	return
 		"This - is - a - test."sv == as_monad(strings).join_with(" - ").join().to<std::string>() &&
-		"This|is|a|test."sv == as_monad(strings).join_with("|"sv).to<std::string>() &&
+		"This - is - a - test."sv == as_monad(std::optional{ strings }).join_with(" - ").join().to<std::string>() &&
+		"This|is|a|test."sv == as_monad(strings).join_with("|"sv).join().to<std::string>() &&
 		std::vector{ 1,0,2,0,3,0,4,0,5 } == as_monad(ints).join_with(0).to<std::vector>();
 	}());
 
 // Test split
 static_assert([] {
-	auto empty = std::vector<int>{};
+	auto const parts = as_monad(splittable).join().split('*').to<std::vector>();
+	auto const oparts = as_monad(std::optional{ splittable }).join().split('*').to<std::vector>();
+	if (!std::ranges::equal(parts, strings))
+		return false;
+	if (!std::ranges::equal(oparts, strings))
+		return false;
 
 	auto const actual1 = as_monad(ints).join().split(0).to<std::vector>();
 	auto const actual2 = as_monad(ints).join().split(3).to<std::vector>();
@@ -109,12 +115,15 @@ static_assert([] {
 
 // Test split fast
 static_assert([] {
-	auto empty = std::vector<int>{};
+	auto const  parts = as_monad(splittable)                 .join().split_fast<8>('*').to<std::vector<std::string>>();
+	auto const oparts = as_monad(std::optional{ splittable }).join().split_fast<8>('*').to<std::vector<std::string>>();
+	if (parts != oparts)
+		return false;
 
 	auto const actual1 = as_monad(ints).join().split_fast<8>(0).to<std::vector>();
 	auto const actual2 = as_monad(ints).join().split_fast<8>(3).to<std::vector>();
 	auto const actual3 = as_monad(ints).join().split_fast<8>(5).to<std::vector>();
-
+	
 	return
 		(actual1.size() == 1 && actual1[0].size() == 5) &&
 		(actual2.size() == 2 && actual2[0].size() == 2 && actual2[1].size() == 2) &&
@@ -142,4 +151,28 @@ static_assert([] {
 		.and_then	([](LargeObject const&) { })
 		.then		([](LargeObject const&) { return 42; });
 	return true;
+	}());
+
+// Test terminal then
+static_assert([] {
+	int sum = 0;
+	as_monad(ints).concat(opt_ints).join().then([&sum](int v) { sum += v; });
+	return sum == 40;
+	}());
+
+// Test terminal sum
+static_assert([] {
+	return 40 == as_monad(ints).concat(opt_ints).join().sum();
+	}());
+
+// Test terminal count
+static_assert([] {
+	return 11 == as_monad(ints).concat(opt_ints).join().count();
+	}());
+
+// Test terminal dest
+static_assert([] {
+	std::vector<int> v;
+	as_monad(ints).concat(opt_ints).join().dest(v);
+	return v.size() == 11;
 	}());
