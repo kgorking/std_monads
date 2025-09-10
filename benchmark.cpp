@@ -1,4 +1,4 @@
-import monad2;
+import monad;
 import std;
 #include "nanobench.h"
 
@@ -29,7 +29,7 @@ void bench_map_filter_sum() {
         });
 
     bench.run("monad", [&] {
-        int const sum = monad2(ints).map(add_three).filter(is_odd).sum<int>();
+        int const sum = as_monad(ints).join().map(add_three).filter(is_odd).sum<int>();
 		doNotOptimizeAway(sum);
         });
 }
@@ -49,12 +49,12 @@ void bench_join_split() {
 #endif
 
     bench.run("monad", [&] {
-        auto const count = monad2(strings).join_with(',').split(',').count();
+        auto const count = as_monad(strings).join_with(","sv).join().split(',').count();
         doNotOptimizeAway(count);
         });
 
     bench.run("monad - fast", [&] {
-        auto const count = monad2(strings).join_with(',').split_fast<8>(',').count();
+        auto const count = as_monad(strings).join_with(","sv).join().split_fast<8>(',').count();
         doNotOptimizeAway(count);
         });
 }
@@ -76,7 +76,8 @@ void bench_optional() {
         });
 
     bench.run("monad", [&] {
-        auto const sum = monad2(opts)
+        auto const sum = as_monad(opts)
+            .join()
             .map(&std::string_view::size)
             .sum();
         doNotOptimizeAway(sum);
@@ -95,7 +96,7 @@ void bench_join_to_string() {
         });
 
     bench.run("monad", [&] {
-        auto const result = monad2(strings).join().to<std::string>();
+        auto const result = as_monad(strings).join().to<std::string>();
         doNotOptimizeAway(result);
         });
 }
@@ -113,7 +114,28 @@ void bench_map_size_sum() {
         });
 
     bench.run("monad", [&] {
-        auto const result = monad2(strings).map(&std::string_view::size).sum();
+        auto const result = as_monad(strings).join().map(&std::string_view::size).sum();
+        doNotOptimizeAway(result);
+        });
+}
+
+void bench_async_map_size_sum() {
+    auto bench = Bench()
+        .title("async-map-size-sum")
+        .relative(true)
+        .minEpochIterations(number_of_iterations);
+
+    auto very_slow_size = [](std::string_view s) {
+        return s.size();
+		};
+
+    bench.run("monad", [&] {
+        auto const result = as_monad(strings).join().map(very_slow_size).sum();
+        doNotOptimizeAway(result);
+        });
+
+    bench.run("async monad", [&] {
+        auto const result = as_monad(strings).join().async().map(very_slow_size).sum();
         doNotOptimizeAway(result);
         });
 }
@@ -124,4 +146,5 @@ int main() {
 	bench_optional();
     bench_join_to_string();
     bench_map_size_sum();
+    bench_async_map_size_sum();
 }
