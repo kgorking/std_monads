@@ -96,8 +96,8 @@ class monad {
 	friend class monad;
 
 	// Allow acces to 'as_monad' function
-	template<typename T>
-	friend constexpr auto as_monad(T const&);
+	template<typename MT>
+	friend constexpr auto as_monad(MT const&);
 
 	// This function does nothing. Good for reference.
 	constexpr auto identity() const {
@@ -125,6 +125,8 @@ public:
 	void operator=(monad const&) = delete REASON("No");
 	void operator=(monad&&) = delete REASON("No");
 
+	// Apply a filter predicate to the monad.
+	// The predicate must be callable with the unwrapped type of T.
 	constexpr auto filter(std::predicate<unwrapped_t<T>> auto pred) const {
 		auto f = [=, fn = fn](auto dst) {
 			return fn([=](in<T> v) {
@@ -136,26 +138,28 @@ public:
 				return true;
 				});
 			};
-		using F = decltype(f);
-		return monad<unwrapped_t<T>, F>{std::move(f)};
+		using Filter = monad<unwrapped_t<T>, decltype(f)>;
+		return Filter{std::move(f)};
 	}
 
-	template<typename TypeHack = std::conditional_t<std::is_class_v<T>, T, std::nullopt_t>>
-		requires std::is_class_v<T>
-	constexpr auto filter(bool (TypeHack::* pred)() const) const {
-		auto f = [=, fn = fn](auto dst) {
-			return fn([=](in<T> v) {
-				if (has_value(v)) {
-					in<unwrapped_t<T>> uv = unwrap(v);
-					if (std::invoke(pred, uv))
-						return dst(uv);
-				}
-				return true;
-				});
-			};
-		using F = decltype(f);
-		return ::monad<unwrapped_t<T>, F>{std::move(f)};
-	}
+	//template<typename TypeHack = std::conditional_t<std::is_class_v<T>, T, std::nullopt_t>>
+	//	requires std::is_class_v<T>
+	//constexpr auto filter(bool (T::* pred)() const) const
+	//	requires std::is_class_v<T>
+	//{
+	//	auto f = [=, fn = fn](auto dst) {
+	//		return fn([=](in<T> v) {
+	//			if (has_value(v)) {
+	//				in<unwrapped_t<T>> uv = unwrap(v);
+	//				if (std::invoke(pred, uv))
+	//					return dst(uv);
+	//			}
+	//			return true;
+	//			});
+	//		};
+	//	using F = decltype(f);
+	//	return ::monad<unwrapped_t<T>, F>{std::move(f)};
+	//}
 
 	template<typename MapFn, typename ...Args>
 		requires std::invocable<MapFn, unwrapped_t<T>, Args...>
@@ -510,7 +514,11 @@ public:
 					return true;
 				}
 				catch (...) {
+#ifdef __cpp_lib_stacktrace
 					std::print(std::cerr, "monad::guard - unhandled exception:\n{}", std::stacktrace::current(0));
+#else
+					std::println(std::cerr, "monad::guard - unhandled exception");
+#endif
 					std::terminate();
 				}
 				});
@@ -621,6 +629,7 @@ public:
 	}
 
 	template<typename I = unwrapped_t<T>>
+//		requires requires (I i, unwrapped_t<T> t) { i += t; }
 	constexpr I sum(I init = {}) const {
 		fn([&](auto const& v) {
 			if (has_value(v))
@@ -709,7 +718,6 @@ public:
 	}
 };
 
-
 export template<typename T>
 constexpr auto as_monad(T const& val) {
 	auto f = [&val](auto dst) {
@@ -718,6 +726,6 @@ constexpr auto as_monad(T const& val) {
 		return true;
 		};
 
-	using F = decltype(f);
-	return monad<T, F>(std::move(f));
+	using Fn = decltype(f);
+	return ::monad<T, Fn>{ std::move(f) };
 }
