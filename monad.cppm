@@ -125,30 +125,6 @@ public:
 	void operator=(monad const&) = delete REASON("No");
 	void operator=(monad&&) = delete REASON("No");
 
-	template<int N>
-		requires (N >= 0 && N < std::tuple_size_v<unwrapped_t<T>>)
-	constexpr auto element() const {
-		auto f = [=, fn = fn](auto dst) {
-			return fn([&](in<T> v) {
-				if (has_value(v)) {
-					return dst(std::get<N>(unwrap(v)));
-				}
-				return true;
-				});
-			};
-		using F = decltype(f);
-		using ElementT = std::tuple_element_t<N, unwrapped_t<T>>;
-		return monad<ElementT, F>{std::move(f)};
-	}
-
-	constexpr auto keys() const requires (std::tuple_size_v<unwrapped_t<T>> >= 2) {
-		return element<0>();
-	}
-
-	constexpr auto values() const requires (std::tuple_size_v<unwrapped_t<T>> >= 2) {
-		return element<1>();
-	}
-
 	constexpr auto filter(std::predicate<unwrapped_t<T>> auto pred) const {
 		auto f = [=, fn = fn](auto dst) {
 			return fn([=](in<T> v) {
@@ -251,6 +227,30 @@ public:
 		return monad<unwrapped_t<T>, F>{std::move(f)};
 	}
 
+	template<int N>
+		requires (N >= 0 && N < std::tuple_size_v<unwrapped_t<T>>)
+	constexpr auto element() const {
+		auto f = [=, fn = fn](auto dst) {
+			return fn([&](in<T> v) {
+				if (has_value(v)) {
+					return dst(std::get<N>(unwrap(v)));
+				}
+				return true;
+				});
+			};
+		using F = decltype(f);
+		using ElementT = std::tuple_element_t<N, unwrapped_t<T>>;
+		return monad<ElementT, F>{std::move(f)};
+	}
+
+	constexpr auto keys() const requires (std::tuple_size_v<unwrapped_t<T>> >= 2) {
+		return element<0>();
+	}
+
+	constexpr auto values() const requires (std::tuple_size_v<unwrapped_t<T>> >= 2) {
+		return element<1>();
+	}
+
 	template<typename ...Ts>
 		//requires (std::same_as<unwrapped_t<T>, unwrapped_t<Ts>> && ...)
 	constexpr auto concat(Ts const&... ts) const {
@@ -271,7 +271,6 @@ public:
 	}
 
 	template<typename OtherT, typename OtherFn>
-//		requires std::same_as<unwrapped_t<T>, unwrapped_t<OtherT>>
 	constexpr auto link(monad<OtherT, OtherFn> const& m) const {
 		auto f = [fn = fn, &m](auto dst) {
 			return fn(dst) && m.fn(dst);
@@ -403,8 +402,8 @@ public:
 
 	template<typename Cast>
 		requires std::constructible_from<Cast, unwrapped_t<T>>
-	|| std::constructible_from<Cast, std::from_range_t, unwrapped_t<T>>
-		constexpr auto as() const {
+			  || std::constructible_from<Cast, std::from_range_t, unwrapped_t<T>>
+	constexpr auto as() const {
 		auto f = [=, fn = fn](auto dst) {
 			return fn([=](in<T> v) {
 				if (has_value(v)) {
@@ -442,10 +441,10 @@ public:
 	constexpr auto value_or(Other const& other) const requires optional_like<T> {
 		auto f = [=, fn = fn](auto dst) {
 			return fn([=](in<T> v) {
-				if (!has_value(v))
-					return dst(other);
-				else
+				if (has_value(v))
 					return dst(unwrap(v));
+				else
+					return dst(other);
 				});
 			};
 		using F = decltype(f);
@@ -664,6 +663,7 @@ public:
 	}
 
 	template<typename C>
+		requires requires (C c, unwrapped_t<T> t) { add_to_container(c, t); }
 	constexpr auto to_dest(C& c) const {
 		fn([&](T&& v) {
 			if (has_value(v)) {
@@ -677,7 +677,6 @@ public:
 
 	template<typename C>
 		requires requires (C c, unwrapped_t<T> t) { add_to_container(c, t); }
-		//requires std::constructible_from<typename C::value_type, unwrapped_t<T>>
 	constexpr auto to() const {
 		C c{};
 
