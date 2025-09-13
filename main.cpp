@@ -84,6 +84,7 @@ static void test_optionals() {
 static void test_map() {
 	std::println("\n== Map ==");
 
+	std::println("  strings.map(reverse): {}", as_monad(strings).join().map(std::ranges::views::reverse).to<std::string>());
 	std::println("  ints.map(is_odd): {}", as_monad(ints).join().map(is_odd).to<std::vector<int>>());
 
 	auto transform_fn = [](int i) { std::putchar('x'); return i; };
@@ -102,8 +103,9 @@ static void test_map() {
 static void test_concat_sum() {
 	std::println("\n== Concat and Sum ==");
 
-	std::println("  ints.sum(): {} ", as_monad(ints).join().sum());
-	std::println("  ints.concat(ints).sum(): {} ", as_monad(ints).concat(ints).join().sum());
+	std::println("  ints.sum(): {} ", as_monad(ints).sum());
+	std::println("  ints.repeat(4).sum(): {} ", as_monad(ints).repeat(4).sum());
+	std::println("  ints.concat(ints).sum(): {} ", as_monad(ints).concat(ints).sum());
 }
 
 static void test_link_monad() {
@@ -152,7 +154,7 @@ static void test_take() {
 	std::println("\n== Take ==");
 
 	std::print("  ints.take(3): ");
-	as_monad(ints).join().take(3).then(putval);
+	as_monad(ints).take(3).then(putval);
 	std::println();
 }
 
@@ -160,7 +162,7 @@ static void test_drop() {
 	std::println("\n== Drop ==");
 
 	std::print("  ints.drop(3): ");
-	as_monad(ints).join().drop(3).then(putval);
+	as_monad(ints).drop(3).then(putval);
 	std::println();
 }
 
@@ -172,7 +174,7 @@ static void test_to() {
 	std::println("  ints.concat(ints).join().to<std::vector>(): {}", as_monad(ints).concat(ints).join().to<std::vector>());
 }
 
-static void test_async() {
+/*static void test_async() {
 	std::println("\n== Async ==");
 
 	std::print("  strings.async.print: ");
@@ -181,6 +183,20 @@ static void test_async() {
 
 	std::atomic<std::size_t> sum = 0;
 	as_monad(opts).join().async().map(to_int).then([&sum](int c) { sum += c; });
+	std::println("  opts.async.map(to_int).sum: {}", sum.load());
+	std::println("  opts.      map(to_int).sum: {}", as_monad(opts).join().map(to_int).sum());
+}*/
+
+static void test_parallel() {
+	std::println("\n== Parallel ==");
+
+	std::print("  strings.join_par.print: ");
+	//as_monad(strings).join().join_par().then(&std::putchar);
+	as_monad(strings).join_par().join().then(putval);
+	std::println();
+
+	std::atomic<std::size_t> sum = 0;
+	as_monad(opts).join().map(to_int).then([&sum](int c) { sum += c; });
 	std::println("  opts.async.map(to_int).sum: {}", sum.load());
 	std::println("  opts.      map(to_int).sum: {}", as_monad(opts).join().map(to_int).sum());
 }
@@ -207,7 +223,7 @@ int main() {
 	test_take();
 	test_drop();
 	test_to();
-	test_async();
+	test_parallel();
 
 	return 0;
 }

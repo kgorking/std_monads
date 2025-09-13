@@ -49,18 +49,16 @@ static_assert([] {
 		    2 == as_monad(opts).join().map(size_over_4).sum<int>();
 	}());
 
-// Test take
-static_assert([] {
-	return 3 == as_monad(ints).join().take(3).count() &&
-		   5 == as_monad(opts).join().take(5).count() &&
-		   0 == as_monad(opts).join().take(-3).count();
-	}());
-
 // Test drop
 static_assert([] {
-	return 2 == as_monad(ints).join().drop(3).count() &&
-		   2 == as_monad(opts).join().drop(5).count() &&
-		   0 == as_monad(opts).join().drop(-3).count();
+	return 2 == as_monad(ints).drop(3).count() &&
+		   0 == as_monad(ints).drop(5).count() &&
+		   5 == as_monad(ints).drop(-3).count();
+	}());
+
+// Test drop+take
+static_assert([] {
+	return 9 == as_monad(ints).join(3, 3).sum();
 	}());
 
 // Test concat

@@ -11,7 +11,7 @@ auto mul_two = [](int v) { return v * 2; };
 using namespace std::literals;
 using namespace ankerl::nanobench;
 
-static constexpr auto ints = std::array{ 1, 2, 3, 4, 5 };
+static constexpr auto ints = std::array{ 1, 2, 3, 4, 5, 1, 2, 3, 4, 5, 1, 2, 3, 4, 5, 1, 2, 3, 4, 5 };
 static constexpr auto strings = std::array{ "This"sv, "is"sv, "a"sv, "test."sv };
 static constexpr auto opts = std::to_array<std::optional<std::string_view>>({ "1234", "15 foo", "bar", std::nullopt, "42", "5000000000", " 5", std::nullopt, "-43" });
 
@@ -28,7 +28,11 @@ static void bench_map_filter_sum() {
         });
 
     bench.run("monad", [&] {
-        int const sum = as_monad(ints).join().map(add_three).filter(is_odd).sum<int>();
+        int const sum = as_monad(ints)
+            .join()
+            .map(add_three)
+            .filter(is_odd)
+            .sum();
 		doNotOptimizeAway(sum);
         });
 }
@@ -47,7 +51,11 @@ static void bench_join_split() {
 #endif
 
     bench.run("monad", [&] {
-        auto const count = as_monad(strings).join_with(","sv).join().split(',').count();
+        auto const count = as_monad(strings)
+            .join_with(","sv)
+            .join()
+            .split(',')
+            .count();
         doNotOptimizeAway(count);
         });
 
@@ -66,7 +74,7 @@ static void bench_optional() {
         auto view = opts
             | std::views::filter([](auto const& opt) { return opt.has_value(); })
             | std::views::transform([](auto const& opt) { return *opt; })
-            | std::views::transform(&std::string_view::size);
+            | std::views::transform(std::ranges::size);
 
         int const sum = std::reduce(view.begin(), view.end());
         doNotOptimizeAway(sum);
@@ -75,7 +83,7 @@ static void bench_optional() {
     bench.run("monad", [] {
         auto const sum = as_monad(opts)
             .join()
-            .map(&std::string_view::size)
+            .map(std::ranges::size)
             .sum();
         doNotOptimizeAway(sum);
         });
@@ -103,32 +111,31 @@ static void bench_map_size_sum() {
         .relative(true);
 
     bench.run("ranges", [] {
-        auto view = strings | std::views::transform(&std::string_view::size);
+        auto view = strings | std::views::transform(std::ranges::size);
         auto const result = std::reduce(view.begin(), view.end());
         doNotOptimizeAway(result);
         });
 
     bench.run("monad", [] {
-        auto const result = as_monad(strings).join().map(&std::string_view::size).sum();
+        auto const result = as_monad(strings).join().map(std::ranges::size).sum();
         doNotOptimizeAway(result);
         });
 }
 
 static void bench_async_map_size_sum() {
-	// Note: This benchmark is commented out because the overhead of threading
-    /*auto bench = Bench()
+    auto bench = Bench()
         .title("async-map-size-sum")
         .relative(true);
 
     bench.run("monad", [] {
-        auto const result = as_monad(strings).join().map(&std::string_view::size).sum();
+        auto const result = as_monad(strings).join().map(std::ranges::size).sum();
         doNotOptimizeAway(result);
         });
 
     bench.run("async monad", [] {
-        auto const result = as_monad(strings).join().async().map(&std::string_view::size).sum();
+        auto const result = as_monad(strings).join_par().map(std::ranges::size).sum();
         doNotOptimizeAway(result);
-        });*/
+        });
 }
 
 int main() {

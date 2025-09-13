@@ -23,7 +23,6 @@ struct alignas(std::hardware_destructive_interference_size) task {
 	std::future<void> future;
 	T data;
 	std::size_t id = 0;
-	bool return_value = true;
 	std::binary_semaphore sema{ 0 };
 	char _pad[std::hardware_destructive_interference_size - sizeof(std::size_t) - sizeof(bool) - sizeof(std::binary_semaphore) - sizeof(std::future<void>)]{};
 };
@@ -47,7 +46,7 @@ static constexpr void add_to_container(Container& c, T const& v) {
 		else
 			static_assert(false, "Container does not support adding elements.");
 	}
-	else if constexpr (range_like<T> && std::same_as<typename Container::value_type, typename T::value_type>) {
+	else if constexpr (range_like<T> && std::same_as<typename Container::value_type, std::ranges::range_value_t<T>>) {
 		if constexpr (requires { c.append_range(v); })
 			c.append_range(v);
 		else if constexpr (requires { c.insert_range(v); })
@@ -64,6 +63,11 @@ static constexpr void add_to_container(Container& c, T const& v) {
 	}
 }
 
+template<typename T>				struct unwrapped    { using type = T; };
+template<typename T>				struct unwrapped<std::optional<T>> { using type = T; };
+template<typename T, typename E>	struct unwrapped<std::expected<T,E>> { using type = T; };
+template<typename T> using  unwrapped_t = typename unwrapped<T>::type;
+
 template<typename T>
 static constexpr bool has_value(T const& v) noexcept {
 	if constexpr (optional_like<T>)
@@ -78,10 +82,13 @@ static constexpr decltype(auto) unwrap(T&& v) noexcept {
 	else
 		return std::forward<T>(v);
 }
-
-template<typename      T>	struct unwrapped    { using type = T; };
-template<optional_like T>	struct unwrapped<T> { using type = typename T::value_type; };
-template<typename T>		using  unwrapped_t = typename unwrapped<T>::type;
+template<typename T>
+static constexpr decltype(auto) unwrap_or(T&& v, auto const val) noexcept {
+	if constexpr (optional_like<T>)
+		return std::forward<T>(v).value_or(val);
+	else
+		return std::forward<T>(v);
+}
 
 template<typename UserFn, typename ...Args>
 concept must_return_void = std::is_same_v<void, std::invoke_result_t<UserFn, Args...>>;
@@ -104,7 +111,7 @@ class monad {
 		auto f = [=, fn = fn](auto dst) {
 			bool const retval = fn([=](in<T> v) {
 				if (has_value(v)) {
-					return dst(unwrap(v));
+					dst(unwrap(v));
 				}
 				return true;
 				});
@@ -129,13 +136,12 @@ public:
 	// The predicate must be callable with the unwrapped type of T.
 	constexpr auto filter(std::predicate<unwrapped_t<T>> auto pred) const {
 		auto f = [=, fn = fn](auto dst) {
-			return fn([=](in<T> v) {
+			return fn([=](const auto& v) {
 				if (has_value(v)) {
-					in<unwrapped_t<T>> uv = unwrap(v);
+					const auto& uv = unwrap(v);
 					if (std::invoke(pred, uv))
-						return dst(uv);
+						dst(uv);
 				}
-				return true;
 				});
 			};
 		using Filter = monad<unwrapped_t<T>, decltype(f)>;
@@ -167,68 +173,11 @@ public:
 		auto f = [=, fn = fn, ...args = std::forward<Args>(args)](auto dst) {
 			return fn([=](in<T> v) {
 				if (has_value(v))
-					return dst(std::invoke(mf, unwrap(v), args...));
-				return true;
+					dst(std::invoke(mf, unwrap(v), args...));
 				});
 			};
 		using F = decltype(f);
 		return monad<std::invoke_result_t<MapFn, unwrapped_t<T>, Args...>, F> {std::move(f)};
-	}
-
-	constexpr auto take(std::signed_integral auto n) const {
-		auto f = [=, fn = fn](auto dst) {
-			if (n <= 0)
-				return true;
-
-			//decltype(n) count = 0;
-			return fn([=, count = 0](in<T> v) mutable {
-				if (has_value(v))
-					return count++ < n && dst(unwrap(v));
-				return true;
-				});
-			};
-		using F = decltype(f);
-		return monad<unwrapped_t<T>, F>{std::move(f)};
-	}
-
-	constexpr auto take_while(bool& b) const {
-		auto f = [=, fn = fn, &b](auto dst) {
-			return fn([=](in<T> v) {
-				if (has_value(v))
-					return b && dst(unwrap(v));
-				return true;
-				});
-			};
-		using F = decltype(f);
-		return monad<unwrapped_t<T>, F>{std::move(f)};
-	}
-
-	constexpr auto take_while(std::predicate auto pred) const {
-		auto f = [=, fn = fn](auto dst) {
-			return fn([=](in<T> v) {
-				if (has_value(v))
-					return pred(unwrap(v)) && dst(unwrap(v));
-				return true;
-				});
-			};
-		using F = decltype(f);
-		return monad<unwrapped_t<T>, F>{std::move(f)};
-	}
-
-	constexpr auto drop(std::signed_integral auto n) const {
-		auto f = [=, fn = fn](auto dst) {
-			if (n <= 0)
-				return true;
-
-			//decltype(n) count = 0;
-			return fn([=, count = 0](in<T> v) mutable {
-				if (has_value(v))
-					return count++ < n || dst(unwrap(v));
-				return true;
-				});
-			};
-		using F = decltype(f);
-		return monad<unwrapped_t<T>, F>{std::move(f)};
 	}
 
 	template<int N>
@@ -237,9 +186,8 @@ public:
 		auto f = [=, fn = fn](auto dst) {
 			return fn([&](in<T> v) {
 				if (has_value(v)) {
-					return dst(std::get<N>(unwrap(v)));
+					dst(std::get<N>(unwrap(v)));
 				}
-				return true;
 				});
 			};
 		using F = decltype(f);
@@ -261,14 +209,13 @@ public:
 		auto make_fn = [](auto const& v) {
 			return [&v](auto dst) {
 				if (has_value(v))
-					if (!dst(unwrap(v)))
-						return false;
-				return true;
+					dst(unwrap(v));
 				};
 		};
 
 		auto f = [fn = fn, ...fns = make_fn(ts)](auto dst) {
-			return fn(dst) && (fns(dst) && ...);
+			fn(dst);
+			(fns(dst), ...);
 			};
 		using F = decltype(f);
 		return monad<unwrapped_t<T>, F>{std::move(f)};
@@ -277,58 +224,92 @@ public:
 	template<typename OtherT, typename OtherFn>
 	constexpr auto link(monad<OtherT, OtherFn> const& m) const {
 		auto f = [fn = fn, &m](auto dst) {
-			return fn(dst) && m.fn(dst);
+			fn(dst);
+			m.fn(dst);
 			};
 		using F = decltype(f);
 		return monad<T, F>{std::move(f)};
 	}
 
-	constexpr auto join() const requires range_like<unwrapped_t<T>> {
-		using VT = typename unwrapped_t<T>::value_type;
+	constexpr auto join(std::int64_t const drop = 0, std::int64_t const take = std::numeric_limits<std::int64_t>::max()) const requires range_like<unwrapped_t<T>> {
 		auto f = [=, fn = fn](auto dst) {
-			return fn([=](auto const& v) mutable {
+			return fn([=](auto const& v) {
 				if (has_value(v)) {
-					for (auto const& p : unwrap(v)) {
-						if (!dst(p))
-							return false;
+					auto const& uv = unwrap(v);
+					std::int64_t const begin = std::max(0ll, drop);
+					std::int64_t const count = std::min(std::ranges::ssize(uv) - begin, take);
+					std::int64_t const end = begin + count;
+
+					for (std::int64_t i = begin; i < end; ++i) {
+						dst(uv[i]);
 					}
 				}
-				return true;
 				});
 			};
 		using F = decltype(f);
+		using VT = std::ranges::range_value_t<unwrapped_t<T>>;
+		return monad<VT, F>{std::move(f)};
+	}
+
+	constexpr auto join_par(std::int64_t const drop = 0, std::int64_t const take = std::numeric_limits<std::int64_t>::max()) const requires range_like<unwrapped_t<T>> {
+		auto f = [=, fn = fn](auto dst) {
+			return fn([=](auto const& v) {
+				if (has_value(v)) {
+					auto const& uv = unwrap(v);
+					std::int64_t const begin = std::max(0ll, drop);
+					std::int64_t const count = std::min(std::ranges::ssize(uv) - begin, take);
+					std::int64_t const end = begin + count;
+
+					//#pragma loop(hint_parallel(0)) // currently bugged in MSVC
+					for (std::int64_t i = begin; i < end; ++i) {
+						dst(uv[i]);
+					}
+				}
+				});
+			};
+		using F = decltype(f);
+		using VT = std::ranges::range_value_t<unwrapped_t<T>>;
 		using MonadJoin = monad<VT, F>;
 		return MonadJoin{std::move(f)};
 	}
 
 	template<typename P>
-		requires range_like<unwrapped_t<T>> && std::is_same_v<P, typename unwrapped_t<T>::value_type>
-	constexpr auto join_with(P&& pattern) const {
+		requires range_like<unwrapped_t<T>> && std::is_same_v<P, std::ranges::range_value_t<unwrapped_t<T>>>
+	constexpr auto join_with(P&& pattern, std::int64_t drop = 0, std::int64_t take = std::numeric_limits<std::int64_t>::max()) const {
 		auto f = [=, fn = fn](auto dst) {
-			return fn([=](in<T> v) mutable {
+			return fn([=](in<T> v) {
 				if (has_value(v)) {
 					auto const& uv = unwrap(v);
 					if (uv.empty())
-						return true;
-					for (auto it = std::begin(uv); it != std::prev(std::end(uv)); ++it) {
-						if (!dst(*it) || !dst(pattern))
-							return false;
+						return;
+
+					std::int64_t const size = -1 + std::min(std::ssize(uv), take);
+					for (std::int64_t i = drop; i < size; ++i) {
+						dst(uv[i]);
+						dst(pattern);
 					}
-					return dst(uv.back());
+					dst(uv.back());
 				}
-				return true;
 				});
 			};
 
 		using F = decltype(f);
-		using VT = typename unwrapped_t<T>::value_type;
-		using MonadJoinWith = monad<VT, F>;
-		return MonadJoinWith{std::move(f)};
+		using VT = std::ranges::range_value_t<unwrapped_t<T>>;
+		using JoinWith = monad<VT, F>;
+		return JoinWith{std::move(f)};
 	}
 
 	template<int S>
-	constexpr auto join_with(const char(&pattern)[S]) const {
-		return join_with(std::string_view{ pattern });
+	constexpr auto join_with(const char(&pattern)[S], std::int64_t drop = 0, std::int64_t take = std::numeric_limits<std::int64_t>::max()) const {
+		return join_with(std::string_view{ pattern }, drop, take);
+	}
+
+	constexpr auto drop(std::int64_t n) const requires range_like<unwrapped_t<T>> {
+		return join(n);
+	}
+
+	constexpr auto take(std::int64_t n) const requires range_like<unwrapped_t<T>> {
+		return join(0, n);
 	}
 
 	template<typename D>
@@ -341,25 +322,21 @@ public:
 		auto f = [=, fn = fn](auto dst) {
 			Container part{};
 
-			bool const retval = fn([=, &part](in<T> v) mutable {
+			fn([=, &part](in<T> v) {
 				if (has_value(v)) {
 					in<unwrapped_t<T>> uv = unwrap(v);
 
 					if (uv == delimiter) {
-						if (!dst(part)) {
-							return false;
-						}
+						dst(part);
 						part.clear();
 					}
 					else {
 						add_to_container(part, uv);
 					}
 				}
-
-				return true;
 				});
 
-			return retval && dst(part);
+			dst(part);
 			};
 		using F = decltype(f);
 		return monad<Container, F>{std::move(f)};
@@ -378,31 +355,44 @@ public:
 			Container part{};
 			std::size_t i = 0;
 
-			bool const retval = fn([=, &part, &i](in<T> v) {
+			fn([=, &part, &i](in<T> v) {
 				if (has_value(v)) {
 					in<unwrapped_t<T>> uv = unwrap(v);
 					if (uv == delimiter) {
-						bool const retval = dst(View{ part.data(), i });
+						dst(View{ part.data(), i });
 						i = 0;
-						return retval;
 					}
 					else {
 						part[i++] = uv;
-						return i < MaxSplitSize;
+						if (i == MaxSplitSize)
+							throw;
 					}
 				}
-				return true;
 				});
 
-			return retval && dst(View{ part.data(), i });
+			dst(View{ part.data(), i });
 			};
 		using F = decltype(f);
 		using MonadSplitFast = monad<View, F>;
 		return MonadSplitFast{std::move(f)};
 	}
 
-	// TODO use bloom filter
-	//constexpr auto split(range_like auto delimiter) const {
+	constexpr auto repeat(int N) const {
+		auto f = [=, fn = fn](auto dst) {
+			return fn([=](auto const& v) mutable {
+				for (int i = 0; i < N; ++i) {
+					if(has_value(v))
+						dst(unwrap(v));
+				}
+				});
+			};
+		return monad<T, decltype(f)>{std::move(f)};
+	}
+
+	template <int N>
+	constexpr auto repeat() const {
+		return repeat(N);
+	}
 
 	template<typename Cast>
 		requires std::constructible_from<Cast, unwrapped_t<T>>
@@ -412,13 +402,12 @@ public:
 			return fn([=](in<T> v) {
 				if (has_value(v)) {
 					if constexpr (std::constructible_from<Cast, unwrapped_t<T>>) {
-						return dst(Cast{ unwrap(v) });
+						dst(Cast{ unwrap(v) });
 					}
 					else {
-						return dst(Cast{ std::from_range, unwrap(v) });
+						dst(Cast{ std::from_range, unwrap(v) });
 					}
 				}
-				return true;
 				});
 			};
 		using F = decltype(f);
@@ -430,9 +419,8 @@ public:
 		auto f = [=, fn = fn](auto dst) {
 			return fn([=](in<T> v) {
 				if (has_value(v)) {
-					return dst(std::tuple{ std::invoke(projs, unwrap(v))... });
+					dst(std::tuple{ std::invoke(projs, unwrap(v))... });
 				}
-				return true;
 				});
 			};
 
@@ -446,9 +434,9 @@ public:
 		auto f = [=, fn = fn](auto dst) {
 			return fn([=](in<T> v) {
 				if (has_value(v))
-					return dst(unwrap(v));
+					dst(unwrap(v));
 				else
-					return dst(other);
+					dst(other);
 				});
 			};
 		using F = decltype(f);
@@ -459,10 +447,9 @@ public:
 		auto f = [=, fn = fn](auto dst) {
 			return fn([=](in<T> v) {
 				if (has_value(v))
-					return dst(unwrap(v));
+					dst(unwrap(v));
 				else
 					err_handler(v.error());
-				return true;
 				});
 			};
 		using F = decltype(f);
@@ -477,9 +464,8 @@ public:
 				if (has_value(v)) {
 					in<unwrapped_t<T>> ub = unwrap(v);
 					std::invoke(user_fn, ub, std::forward<Args>(args)...);
-					return dst(ub);
+					dst(ub);
 				}
-				return true;
 				});
 			};
 		using F = decltype(f);
@@ -490,10 +476,8 @@ public:
 		auto f = [=, fn = fn](auto dst) {
 			return fn([=](in<T> v) {
 				if (has_value(v)) {
-					if (!dst(unwrap(v)))
-						return false;
+					dst(unwrap(v));
 				}
-				return true;
 				});
 			};
 		using F = decltype(f);
@@ -505,13 +489,12 @@ public:
 		requires std::invocable<ExceptionHandler, Exception const&>
 	constexpr auto guard(ExceptionHandler&& exception_handler) const {
 		auto f = [=, fn = fn, eh = std::forward<ExceptionHandler>(exception_handler)](auto dst) {
-			bool const retval = fn([=](in<T> v) {
+			fn([=](in<T> v) {
 				try {
-					return dst(v);
+					dst(v);
 				}
 				catch (Exception const& e) {
 					std::invoke(eh, e);
-					return true;
 				}
 				catch (...) {
 #ifdef __cpp_lib_stacktrace
@@ -522,15 +505,13 @@ public:
 					std::terminate();
 				}
 				});
-
-			return retval;
 			};
 		using F = decltype(f);
 		return monad<T, F>{std::move(f)};
 	}
 
 	// This requires data that takes a while to process, in order to be worthwile.
-	auto async(std::size_t num_threads = std::thread::hardware_concurrency()) const {
+	/*auto async(std::size_t num_threads = std::thread::hardware_concurrency()) const {
 		if (num_threads > std::thread::hardware_concurrency())
 			num_threads = std::thread::hardware_concurrency();
 
@@ -549,7 +530,7 @@ public:
 				// Process data while the producer is not done
 				while (!producer_completed) {
 					// Do the work
-					task->return_value = dst(unwrap(task->data));
+					dst(unwrap(task->data));
 
 					// Re-enable the task slot
 					task_bitset ^= (1ull << task->id);
@@ -570,7 +551,7 @@ public:
 
 			// Process the data.
 			// Each element is fed to an available task slot on its own thread.
-			bool const retval = fn([&](in<T> v) {
+			fn([&](in<T> v) {
 				if (has_value(v)) {
 					// Find available task slot
 					std::size_t id = 0;
@@ -578,10 +559,7 @@ public:
 						id = static_cast<std::size_t>(std::countr_zero(task_bitset.load()));
 					} while (id >= num_threads);
 
-					// Check last return value
 					auto* task = &tasks.at(id);
-					if (!task->return_value)
-						return false;
 
 					// Disable the task slot
 					task_bitset ^= (1ull << id);
@@ -592,7 +570,6 @@ public:
 					// Signal the task to process the data
 					task->sema.release();
 				}
-				return true;
 				});
 
 			// Wait for tasks to finish
@@ -607,12 +584,10 @@ public:
 			for (auto& task : tasks) {
 				task.future.get();
 			}
-
-			return retval;
 			};
 		using F = decltype(f);
 		return monad<unwrapped_t<T>, F>{std::move(f)};
-	}
+	}*/
 
 	//
 	// Terminal operations
@@ -624,17 +599,30 @@ public:
 		fn([&](const auto& v) {
 			if (has_value(v))
 				std::forward<UserFn>(user_fn)(unwrap(v), std::forward<Args>(args)...);
-			return true;
 			});
 	}
 
 	template<typename I = unwrapped_t<T>>
-//		requires requires (I i, unwrapped_t<T> t) { i += t; }
+		requires !std::ranges::range<unwrapped_t<T>>
 	constexpr I sum(I init = {}) const {
 		fn([&](auto const& v) {
-			if (has_value(v))
-				init += unwrap(v);
-			return true;
+			init += unwrap_or(v, 0);
+			});
+		return init;
+	}
+
+	template <typename I = typename unwrapped_t<T>::value_type>
+		requires std::ranges::range<unwrapped_t<T>>
+	constexpr auto sum(I init = I{}) const {
+		fn([&](auto const& v) {
+			auto const& uv = unwrap(v);
+			std::int64_t const size = std::ssize(uv);
+
+			I sum = init;
+			for (std::int64_t i = 0; i < size; ++i) {
+				sum += unwrap_or(uv[i], 0ll);
+			}
+			init = sum;
 			});
 		return init;
 	}
@@ -654,7 +642,6 @@ public:
 			static_assert(requires { add_to_container(c, unwrap(v)); }, "Unsupported type can not be added to container.");
 			if (has_value(v))
 				add_to_container(c, unwrap(v));
-			return true;
 			});
 	}
 
@@ -665,7 +652,6 @@ public:
 		fn([&](in<T> v) {
 			if (has_value(v))
 				user_fn(c, unwrap(v));
-			return true;
 			});
 
 		return c;
@@ -678,7 +664,6 @@ public:
 			if (has_value(v)) {
 				add_to_container(c, unwrap(v));
 			}
-			return true;
 			});
 
 		return c;
@@ -692,7 +677,6 @@ public:
 		fn([&](in<T> v) {
 			if (has_value(v))
 				add_to_container(c, unwrap(v));
-			return true;
 			});
 
 		return c;
@@ -711,7 +695,6 @@ public:
 		fn([&](in<T> v) {
 			if (has_value(v))
 				add_to_container(c, std::tuple{ std::invoke(projs, unwrap(v))... });
-			return true;
 			});
 
 		return c;
@@ -722,8 +705,7 @@ export template<typename T>
 constexpr auto as_monad(T const& val) {
 	auto f = [&val](auto dst) {
 		if (has_value(val))
-			return dst(unwrap(val));
-		return true;
+			dst(unwrap(val));
 		};
 
 	using Fn = decltype(f);
