@@ -122,18 +122,23 @@ static void bench_map_size_sum() {
         });
 }
 
-static void bench_async_map_size_sum() {
+static void bench_parallel_map_size_sum() {
     auto bench = Bench()
-        .title("async-map-size-sum")
+        .title("parallel-map-size-sum")
         .relative(true);
 
-    bench.run("monad", [] {
-        auto const result = as_monad(strings).join().map(std::ranges::size).sum();
+    auto snooze = [](auto const& a) {
+        std::this_thread::sleep_for(1ms);
+        return a;
+		};
+
+    bench.run("monad", [&] {
+        auto const result = as_monad(strings).join().map(snooze).map(std::ranges::size).sum();
         doNotOptimizeAway(result);
         });
 
-    bench.run("async monad", [] {
-        auto const result = as_monad(strings).join_par().map(std::ranges::size).sum();
+    bench.run("parallel monad", [&] {
+        auto const result = as_monad(strings).join_par().map(snooze).map(std::ranges::size).sum();
         doNotOptimizeAway(result);
         });
 }
@@ -144,5 +149,5 @@ int main() {
 	bench_optional();
     bench_join_to_string();
     bench_map_size_sum();
-    bench_async_map_size_sum();
+    bench_parallel_map_size_sum();
 }

@@ -3,11 +3,11 @@ import std;
 
 using namespace std::literals;
 
-auto is_odd = [](int i) { return i % 2 != 0; };
-auto add_three = [](int v) { return v + 3; };
-auto mul_two = [](int v) { return v * 2; };
-auto putval = [](auto val) { std::print("{} ", val); };
-auto puterr = [](std::errc val) { std::print("*{}* ", std::make_error_condition(val).message()); };
+constexpr auto is_odd = [](int i) { return i % 2 != 0; };
+constexpr auto add_three = [](int v) { return v + 3; };
+constexpr auto mul_two = [](int v) { return v * 2; };
+const     auto putval = [](auto const& val) { std::print("{} ", val); };
+const     auto puterr = [](std::errc val) { std::print("*{}* ", std::make_error_condition(val).message()); };
 
 static std::expected<int, std::errc> to_int(std::string_view sv) {
 	int r{};
@@ -192,7 +192,7 @@ static void test_parallel() {
 
 	std::print("  strings.join_par.print: ");
 	//as_monad(strings).join().join_par().then(&std::putchar);
-	as_monad(strings).join_par().join().then(putval);
+	as_monad(ints).join_par().then(putval);
 	std::println();
 
 	std::atomic<std::size_t> sum = 0;

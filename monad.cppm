@@ -14,16 +14,13 @@ template<typename T> concept optional_like = requires(T opt) { opt.has_value(); 
 template<typename T> concept expected_like = optional_like<T> && requires(T exp) { exp.error(); };
 template<typename F> concept function_like = std::invocable<F, decltype([]<typename T>(T const&) { return true; }) > ;
 
-template<typename T>
-using in = std::conditional_t<std::is_trivially_copyable_v<T> && sizeof(T) <= 2 * sizeof(void*), T const, T const&>;
-
 #pragma warning(disable : 4324)
 template<typename T>
 struct alignas(std::hardware_destructive_interference_size) task {
-	std::future<void> future;
 	T data;
 	std::size_t id = 0;
 	std::binary_semaphore sema{ 0 };
+	std::future<void> future;
 	char _pad[std::hardware_destructive_interference_size - sizeof(std::size_t) - sizeof(bool) - sizeof(std::binary_semaphore) - sizeof(std::future<void>)]{};
 };
 
@@ -63,10 +60,12 @@ static constexpr void add_to_container(Container& c, T const& v) {
 	}
 }
 
+
 template<typename T>				struct unwrapped    { using type = T; };
 template<typename T>				struct unwrapped<std::optional<T>> { using type = T; };
 template<typename T, typename E>	struct unwrapped<std::expected<T,E>> { using type = T; };
-template<typename T> using  unwrapped_t = typename unwrapped<T>::type;
+template<typename T>				using  unwrapped_t = typename unwrapped<T>::type;
+
 
 template<typename T>
 static constexpr bool has_value(T const& v) noexcept {
@@ -98,18 +97,18 @@ export template<typename T, function_like Fn>
 class monad {
 	Fn fn;
 
-	// Allow acces to private constructor
+	// Allow acces to private constructor of other monads
 	template<typename, function_like>
 	friend class monad;
 
 	// Allow acces to 'as_monad' function
 	template<typename MT>
-	friend constexpr auto as_monad(MT const&);
+	friend constexpr auto as_monad(MT const&) noexcept;
 
 	// This function does nothing. Good for reference.
 	constexpr auto identity() const {
 		auto f = [=, fn = fn](auto dst) {
-			bool const retval = fn([=](in<T> v) {
+			bool const retval = fn([=](auto const& v) {
 				if (has_value(v)) {
 					dst(unwrap(v));
 				}
@@ -144,34 +143,16 @@ public:
 				}
 				});
 			};
-		using Filter = monad<unwrapped_t<T>, decltype(f)>;
+		using F = decltype(f);
+		using Filter = monad<unwrapped_t<T>, F>;
 		return Filter{std::move(f)};
 	}
 
-	//template<typename TypeHack = std::conditional_t<std::is_class_v<T>, T, std::nullopt_t>>
-	//	requires std::is_class_v<T>
-	//constexpr auto filter(bool (T::* pred)() const) const
-	//	requires std::is_class_v<T>
-	//{
-	//	auto f = [=, fn = fn](auto dst) {
-	//		return fn([=](in<T> v) {
-	//			if (has_value(v)) {
-	//				in<unwrapped_t<T>> uv = unwrap(v);
-	//				if (std::invoke(pred, uv))
-	//					return dst(uv);
-	//			}
-	//			return true;
-	//			});
-	//		};
-	//	using F = decltype(f);
-	//	return ::monad<unwrapped_t<T>, F>{std::move(f)};
-	//}
-
 	template<typename MapFn, typename ...Args>
 		requires std::invocable<MapFn, unwrapped_t<T>, Args...>
-	constexpr auto map(MapFn mf, Args&& ...args) const {
+	constexpr auto map(MapFn const& mf, Args&& ...args) const {
 		auto f = [=, fn = fn, ...args = std::forward<Args>(args)](auto dst) {
-			return fn([=](in<T> v) {
+			return fn([=](auto const& v) {
 				if (has_value(v))
 					dst(std::invoke(mf, unwrap(v), args...));
 				});
@@ -184,7 +165,7 @@ public:
 		requires (N >= 0 && N < std::tuple_size_v<unwrapped_t<T>>)
 	constexpr auto element() const {
 		auto f = [=, fn = fn](auto dst) {
-			return fn([&](in<T> v) {
+			return fn([=](auto const& v) {
 				if (has_value(v)) {
 					dst(std::get<N>(unwrap(v)));
 				}
@@ -236,11 +217,11 @@ public:
 			return fn([=](auto const& v) {
 				if (has_value(v)) {
 					auto const& uv = unwrap(v);
-					std::int64_t const begin = std::max(0ll, drop);
+					int const begin = std::max(0ll, drop);
 					std::int64_t const count = std::min(std::ranges::ssize(uv) - begin, take);
-					std::int64_t const end = begin + count;
+					int const end = begin + count;
 
-					for (std::int64_t i = begin; i < end; ++i) {
+					for (int i = begin; i < end; ++i) {
 						dst(uv[i]);
 					}
 				}
@@ -256,14 +237,18 @@ public:
 			return fn([=](auto const& v) {
 				if (has_value(v)) {
 					auto const& uv = unwrap(v);
-					std::int64_t const begin = std::max(0ll, drop);
+					int const begin = std::max(0ll, drop);
 					std::int64_t const count = std::min(std::ranges::ssize(uv) - begin, take);
-					std::int64_t const end = begin + count;
+					int const end = begin + count;
 
-					//#pragma loop(hint_parallel(0)) // currently bugged in MSVC
-					for (std::int64_t i = begin; i < end; ++i) {
-						dst(uv[i]);
-					}
+					//#pragma loop(hint_parallel(0))
+					auto it = uv.begin() + begin;
+					std::for_each(std::execution::par, it, it + count, [&](auto const& item) {
+						dst(item);
+						});
+					//for (int i = begin; i < end; ++i) {
+					//	dst(uv[i]);
+					//}
 				}
 				});
 			};
@@ -277,14 +262,16 @@ public:
 		requires range_like<unwrapped_t<T>> && std::is_same_v<P, std::ranges::range_value_t<unwrapped_t<T>>>
 	constexpr auto join_with(P&& pattern, std::int64_t drop = 0, std::int64_t take = std::numeric_limits<std::int64_t>::max()) const {
 		auto f = [=, fn = fn](auto dst) {
-			return fn([=](in<T> v) {
+			return fn([=](auto const& v) {
 				if (has_value(v)) {
 					auto const& uv = unwrap(v);
 					if (uv.empty())
 						return;
 
-					std::int64_t const size = -1 + std::min(std::ssize(uv), take);
-					for (std::int64_t i = drop; i < size; ++i) {
+					int const begin = std::max(0ll, drop);
+					std::int64_t const count = std::min(std::ranges::ssize(uv) - begin, take);
+					int const end = begin + count - 1;
+					for (int i = begin; i < end; ++i) {
 						dst(uv[i]);
 						dst(pattern);
 					}
@@ -322,9 +309,9 @@ public:
 		auto f = [=, fn = fn](auto dst) {
 			Container part{};
 
-			fn([=, &part](in<T> v) {
+			fn([=, &part](auto const& v) {
 				if (has_value(v)) {
-					in<unwrapped_t<T>> uv = unwrap(v);
+					unwrapped_t<T> const& uv = unwrap(v);
 
 					if (uv == delimiter) {
 						dst(part);
@@ -355,9 +342,9 @@ public:
 			Container part{};
 			std::size_t i = 0;
 
-			fn([=, &part, &i](in<T> v) {
+			fn([=, &part, &i](auto const& v) {
 				if (has_value(v)) {
-					in<unwrapped_t<T>> uv = unwrap(v);
+					unwrapped_t<T> const& uv = unwrap(v);
 					if (uv == delimiter) {
 						dst(View{ part.data(), i });
 						i = 0;
@@ -379,10 +366,18 @@ public:
 
 	constexpr auto repeat(int N) const {
 		auto f = [=, fn = fn](auto dst) {
-			return fn([=](auto const& v) mutable {
-				for (int i = 0; i < N; ++i) {
-					if(has_value(v))
-						dst(unwrap(v));
+			return fn([=](auto const& v) {
+				int const n = N;
+				if constexpr (optional_like<T>) {
+					for (int i = 0; i < n; ++i) {
+						if (has_value(v))
+							dst(unwrap(v));
+					}
+				}
+				else {
+					for (int i = 0; i < n; ++i) {
+						dst(v);
+					}
 				}
 				});
 			};
@@ -399,7 +394,7 @@ public:
 			  || std::constructible_from<Cast, std::from_range_t, unwrapped_t<T>>
 	constexpr auto as() const {
 		auto f = [=, fn = fn](auto dst) {
-			return fn([=](in<T> v) {
+			return fn([=](auto const& v) {
 				if (has_value(v)) {
 					if constexpr (std::constructible_from<Cast, unwrapped_t<T>>) {
 						dst(Cast{ unwrap(v) });
@@ -417,7 +412,7 @@ public:
 	template<typename ...Projs>
 	constexpr auto project(Projs const ...projs) const {
 		auto f = [=, fn = fn](auto dst) {
-			return fn([=](in<T> v) {
+			return fn([=](auto const& v) {
 				if (has_value(v)) {
 					dst(std::tuple{ std::invoke(projs, unwrap(v))... });
 				}
@@ -432,7 +427,7 @@ public:
 	template<typename Other>
 	constexpr auto value_or(Other const& other) const requires optional_like<T> {
 		auto f = [=, fn = fn](auto dst) {
-			return fn([=](in<T> v) {
+			return fn([=](auto const& v) {
 				if (has_value(v))
 					dst(unwrap(v));
 				else
@@ -445,7 +440,7 @@ public:
 
 	constexpr auto unexpected(auto err_handler) const requires expected_like<T> {
 		auto f = [=, fn = fn](auto dst) {
-			return fn([=](in<T> v) {
+			return fn([=](auto const& v) {
 				if (has_value(v))
 					dst(unwrap(v));
 				else
@@ -460,9 +455,9 @@ public:
 		requires must_return_void<UserFn, unwrapped_t<T>, Args...>
 	constexpr auto and_then(UserFn&& user_fn, Args&& ...args) const {
 		auto f = [user_fn = std::forward<UserFn>(user_fn), &...args = std::forward<Args>(args), fn = fn](auto dst) {
-			return fn([=](in<T> v) {
+			return fn([=](auto const& v) {
 				if (has_value(v)) {
-					in<unwrapped_t<T>> ub = unwrap(v);
+					unwrapped_t<T> const& ub = unwrap(v);
 					std::invoke(user_fn, ub, std::forward<Args>(args)...);
 					dst(ub);
 				}
@@ -474,7 +469,7 @@ public:
 
 	constexpr auto unbox() const requires optional_like<T> {
 		auto f = [=, fn = fn](auto dst) {
-			return fn([=](in<T> v) {
+			return fn([=](auto const& v) {
 				if (has_value(v)) {
 					dst(unwrap(v));
 				}
@@ -489,7 +484,7 @@ public:
 		requires std::invocable<ExceptionHandler, Exception const&>
 	constexpr auto guard(ExceptionHandler&& exception_handler) const {
 		auto f = [=, fn = fn, eh = std::forward<ExceptionHandler>(exception_handler)](auto dst) {
-			fn([=](in<T> v) {
+			fn([=](auto const& v) {
 				try {
 					dst(v);
 				}
@@ -551,7 +546,7 @@ public:
 
 			// Process the data.
 			// Each element is fed to an available task slot on its own thread.
-			fn([&](in<T> v) {
+			fn([&](auto const& v) {
 				if (has_value(v)) {
 					// Find available task slot
 					std::size_t id = 0;
@@ -649,7 +644,7 @@ public:
 	constexpr auto to_dest(void (*user_fn)(C&, unwrapped_t<T> const&)) const {
 		C c{};
 
-		fn([&](in<T> v) {
+		fn([&](auto const& v) {
 			if (has_value(v))
 				user_fn(c, unwrap(v));
 			});
@@ -674,7 +669,7 @@ public:
 	constexpr auto to() const {
 		C c{};
 
-		fn([&](in<T> v) {
+		fn([&](auto const& v) {
 			if (has_value(v))
 				add_to_container(c, unwrap(v));
 			});
@@ -692,7 +687,7 @@ public:
 	constexpr auto to(Projs ...projs) const {
 		C<std::remove_cvref_t<std::invoke_result_t<Projs, T>>...> c;
 
-		fn([&](in<T> v) {
+		fn([&](auto const& v) {
 			if (has_value(v))
 				add_to_container(c, std::tuple{ std::invoke(projs, unwrap(v))... });
 			});
@@ -702,7 +697,7 @@ public:
 };
 
 export template<typename T>
-constexpr auto as_monad(T const& val) {
+constexpr auto as_monad(T const& val) noexcept {
 	auto f = [&val](auto dst) {
 		if (has_value(val))
 			dst(unwrap(val));
