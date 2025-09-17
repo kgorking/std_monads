@@ -3,8 +3,6 @@ import std;
 
 using namespace std::literals;
 
-int main() { return 0; }
-
 auto is_odd = [](int i) { return i % 2 != 0; };
 auto add_three = [](int v) { return v + 3; };
 auto not_empty = [](std::string_view s) { return !s.empty(); };
@@ -25,6 +23,24 @@ static constexpr auto opts = std::to_array<std::optional<std::string_view>>({
 	std::nullopt,
 	"-43"
 	});
+
+int main() {
+	std::vector<int> v1(4'000'000);
+	std::vector<int> v2(4'000'000);
+	std::iota(v1.begin(), v1.end(), 1);
+	std::iota(v2.begin(), v2.end(), 1 + 1'000'000);
+
+	auto const m1 = as_monad(v1).join();
+	auto const m2 = as_monad(v2).join();
+	
+	m1	.zip(m2)
+		.then([](std::tuple<int, int> const t) {
+			if (auto const& [a, b] = t; b - a != 1'000'000)
+				std::abort();
+			});
+
+	return 0;
+}
 
 // Test constructors
 static_assert([] {

@@ -148,6 +148,22 @@ public:
 		return Filter{std::move(f)};
 	}
 
+	template<typename TypeHack = std::conditional_t<std::is_class_v<T>, T, std::nullopt_t>>
+		requires std::is_class_v<T>
+	constexpr auto filter(bool (TypeHack::* predicate)() const) const {
+		auto f = [=, fn = fn](auto dst) {
+			return fn([&](const auto& v) {
+				if (has_value(v)) {
+					unwrapped_t<T> const& uv = unwrap(v);
+					if (std::invoke(predicate, uv))
+						dst(uv);
+				}
+				});
+			};
+		using F = decltype(f);
+		return ::monad<unwrapped_t<T>, F>{std::move(f)};
+	}
+
 	// Map the current type T to another type using the provided mapping function.
 	// Additional arguments can be passed to the mapping function.
 	template<typename MapFn, typename ...Args>
@@ -207,6 +223,24 @@ public:
 		return monad<unwrapped_t<T>, F>{std::move(f)};
 	}
 
+	// Prefix types before the monad.
+	template<typename ...Ts>
+	constexpr auto prefix(Ts const&... ts) const {
+		auto make_fn = [](auto const& v) {
+			return [&v](auto dst) {
+				if (has_value(v))
+					dst(unwrap(v));
+				};
+			};
+
+		auto f = [fn = fn, ...fns = make_fn(ts)](auto dst) {
+			(fns(dst), ...);
+			fn(dst);
+			};
+		using F = decltype(f);
+		return monad<unwrapped_t<T>, F>{std::move(f)};
+	}
+
 	// Link two monads together, so that both are executed in sequence.
 	template<typename OtherT, typename OtherFn>
 	constexpr auto link(monad<OtherT, OtherFn> const& m) const {
@@ -234,7 +268,7 @@ public:
 		return monad<T, F>{std::move(f)};
 	}
 
-	// Zip two monads together ...
+	// Zip two monads together. Due to the architecture of this monad implementation, the zipping is done using a separate thread.
 	template<typename OtherT, typename OtherFn>
 	constexpr auto zip(monad<OtherT, OtherFn> const& m) const {
 		auto f = [fn = fn, &m](auto dst) -> void {
@@ -268,7 +302,7 @@ public:
 			done = true;
 			};
 		using F = decltype(f);
-		return monad<T, F>{std::move(f)};
+		return monad<std::tuple<unwrapped_t<T>, unwrapped_t<OtherT>>, F>{std::move(f)};
 	}
 
 	// Flattens a contained range-like type into a sequence of its elements.
@@ -277,12 +311,12 @@ public:
 			fn([=](auto const& v) {
 				if (has_value(v)) {
 					auto const& uv = unwrap(v);
-					int const begin = std::max(0ll, drop);
-					std::int64_t const count = std::min(std::ranges::ssize(uv) - begin, take);
-					int const end = begin + count;
+					std::int64_t const first = std::max(0ll, drop);
+					auto it = std::next(std::ranges::begin(uv), first);
+					auto const end = std::ranges::end(uv);
 
-					for (int i = begin; i < end; ++i) {
-						dst(uv[i]);
+					for (std::int64_t i = 0; i < take && it != end; ++i, it++) {
+						dst(*it);
 					}
 				}
 				});
@@ -293,7 +327,25 @@ public:
 	}
 
 	// Flattens a contained range-like type into a sequence of its elements, in parallel.
-	constexpr auto join_par(std::int64_t const drop = 0, std::int64_t const take = std::numeric_limits<std::int64_t>::max()) const requires range_like<unwrapped_t<T>> {
+	constexpr auto join_par() const requires range_like<unwrapped_t<T>> {
+		auto f = [=, fn = fn](auto dst) {
+			return fn([=](auto const& v) {
+				if (has_value(v)) {
+					auto const& uv = unwrap(v);
+					std::for_each(std::execution::par, std::ranges::begin(uv), std::ranges::end(uv), [&](auto const& item) {
+						dst(item);
+						});
+				}
+				});
+			};
+		using F = decltype(f);
+		using VT = std::ranges::range_value_t<unwrapped_t<T>>;
+		using MonadJoin = monad<VT, F>;
+		return MonadJoin{ std::move(f) };
+	}
+
+	// Flattens a contained range-like type into a sequence of its elements, in parallel.
+	constexpr auto join_par(std::int64_t const drop, std::int64_t const take) const requires range_like<unwrapped_t<T>> && std::ranges::sized_range<unwrapped_t<T>> {
 		auto f = [=, fn = fn](auto dst) {
 			return fn([=](auto const& v) {
 				if (has_value(v)) {
@@ -525,7 +577,7 @@ public:
 		requires must_return_void<UserFn, unwrapped_t<T>, Args...>
 	constexpr auto and_then(UserFn&& user_fn, Args&& ...args) const {
 		auto f = [user_fn = std::forward<UserFn>(user_fn), &...args = std::forward<Args>(args), fn = fn](auto dst) {
-			return fn([=](auto const& v) {
+			return fn([&](auto const& v) {
 				if (has_value(v)) {
 					unwrapped_t<T> const& ub = unwrap(v);
 					std::invoke(user_fn, ub, std::forward<Args>(args)...);
@@ -669,9 +721,22 @@ public:
 			});
 	}
 
+	// Runs the monad until the provided function returns false.
+	template<typename UserFn, typename ...Args>
+		requires std::invocable<UserFn&&, unwrapped_t<T>, Args...>
+	constexpr bool until(UserFn&& user_fn, Args&& ...args) const {
+		std::atomic_bool keep_running{ true };
+		fn([&](const auto& v) {
+			if (keep_running && has_value(v))
+				keep_running = keep_running && std::forward<UserFn>(user_fn)(unwrap(v), std::forward<Args>(args)...);
+			});
+
+		return keep_running;
+	}
+
 	// Sums up the values in the monad.
 	template<typename I = unwrapped_t<T>>
-		requires !std::ranges::range<unwrapped_t<T>>
+		requires (!std::ranges::range<unwrapped_t<T>>)
 	constexpr I sum(I init = {}) const {
 		fn([&](auto const& v) {
 			init += unwrap_or(v, 0);
@@ -680,7 +745,7 @@ public:
 	}
 
 	// Sums up the values in the monad.
-	template <typename I = typename unwrapped_t<T>::value_type>
+	template <typename I = typename std::ranges::range_value_t<unwrapped_t<T>>>
 		requires std::ranges::range<unwrapped_t<T>>
 	constexpr auto sum(I init = I{}) const {
 		fn([&](auto const& v) {

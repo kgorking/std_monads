@@ -23,14 +23,14 @@ static constexpr auto strings = std::array{ "This"sv, "is"sv, "a"sv, "test."sv }
 static constexpr auto opts = std::to_array<std::optional<std::string_view>>({ "1234", "15 foo", "bar", std::nullopt, "42", "5000000000", " 5", std::nullopt, "-43" });
 
 
-static void test_filter() {
+static void filter() {
 	std::println("\n== Filter ==");
 
 	std::println("  ints.filter(is_odd)     : {}", as_monad(ints).join().filter(is_odd).to<std::vector>());
 	std::println("  strings.filter(size > 2): {}", as_monad(strings).join().filter([](std::string_view s) { return s.size() > 2; }).to<std::vector>());
 }
 
-static void test_count() {
+static void count() {
 	std::println("\n== Count ==");
 
 	std::println("  strings.filter(size > 2).count(): {}", as_monad(strings)
@@ -40,7 +40,7 @@ static void test_count() {
 		.count());
 }
 
-static void test_split() {
+static void split() {
 	std::println("\n== Split ==");
 
 	std::println("  ints.split(1): {}", as_monad(ints).join().split(1).to<std::vector>());
@@ -48,7 +48,7 @@ static void test_split() {
 	std::println("  ints.split(5): {}", as_monad(ints).join().split(5).to<std::vector>());
 }
 
-static void test_split_fast() {
+static void split_fast() {
 	std::println("\n== Split Fast(8) ==");
 
 	// split_fast produces std::span, so a conversion is needed to std::vector
@@ -57,7 +57,7 @@ static void test_split_fast() {
 	std::println("  ints.split_fast(5): {}", as_monad(ints).join().split_fast<8>(5).as<std::vector<int>>().to<std::vector>());
 }
 
-static void test_one_value() {
+static void one_value() {
 	std::println("\n== Monad of single value ==");
 
 	std::print("  6.map(is_odd): ");
@@ -69,7 +69,7 @@ static void test_one_value() {
 	std::println();
 }
 
-static void test_optionals() {
+static void optionals() {
 	std::println("\n== Map over optionals ==");
 
 	std::print("  optionals.map(to_int): ");
@@ -81,7 +81,7 @@ static void test_optionals() {
 	std::println();
 }
 
-static void test_map() {
+static void map() {
 	std::println("\n== Map ==");
 
 	std::println("  strings.map(reverse): {}", as_monad(strings).join().map(std::ranges::views::reverse).to<std::string>());
@@ -100,7 +100,7 @@ static void test_map() {
 	std::println("  sums match: {}", sum1 == sum2);
 }
 
-static void test_concat_sum() {
+static void concat_sum() {
 	std::println("\n== Concat and Sum ==");
 
 	std::println("  ints.sum(): {} ", as_monad(ints).sum());
@@ -108,7 +108,7 @@ static void test_concat_sum() {
 	std::println("  ints.concat(ints).sum(): {} ", as_monad(ints).concat(ints).sum());
 }
 
-static void test_link_monad() {
+static void link_monad() {
 	std::println("\n== Link monads ==");
 	
 	auto m = as_monad(opts).join().map(to_int).unbox();
@@ -117,7 +117,7 @@ static void test_link_monad() {
 	std::println("  ints.link(m): {} ", v);
 }
 
-static void test_zip_monad() {
+static void zip_monad() {
 	std::println("\n== Zip monads ==");
 	std::print("  ints.zip(opts): ");
 	
@@ -127,14 +127,14 @@ static void test_zip_monad() {
 	std::println();
 }
 
-static void test_join() {
+static void join() {
 	std::println("\n== Join ==");
 
 	std::println("  strings  .join(): {}", as_monad(strings).join().join().to<std::string>());
 	std::println("  optionals.join(): {}", as_monad(opts).join().join().to<std::string>());
 }
 
-static void test_join_with() {
+static void join_with() {
 	std::println("\n== Join-with ==");
 
 	std::print("  strings.join_with(\" - \"): ");
@@ -150,7 +150,7 @@ static void test_join_with() {
 	std::println();
 }
 
-static void test_join_split() {
+static void join_split() {
 	std::println("\n== Join/Split ==");
 
 	auto joined = as_monad(strings).join_with(","sv).join().to<std::string>();
@@ -160,7 +160,7 @@ static void test_join_split() {
 	std::println("  {:?}.split(,): {}", joined, split);
 }
 
-static void test_take() {
+static void take() {
 	std::println("\n== Take ==");
 
 	std::print("  ints.take(3): ");
@@ -168,7 +168,7 @@ static void test_take() {
 	std::println();
 }
 
-static void test_drop() {
+static void drop() {
 	std::println("\n== Drop ==");
 
 	std::print("  ints.drop(3): ");
@@ -176,7 +176,7 @@ static void test_drop() {
 	std::println();
 }
 
-static void test_to() {
+static void to() {
 	std::println("\n== To ==");
 
 	std::println("  ints.join().to<std::set>(): {}", as_monad(ints).join().to<std::set>());
@@ -184,7 +184,7 @@ static void test_to() {
 	std::println("  ints.concat(ints).join().to<std::vector>(): {}", as_monad(ints).concat(ints).join().to<std::vector>());
 }
 
-static void test_async() {
+static void async() {
 	std::println("\n== Async ==");
 
 	std::print("  strings.async.print: ");
@@ -197,7 +197,7 @@ static void test_async() {
 	std::println("  opts.      map(to_int).sum: {}", as_monad(opts).join().map(to_int).sum());
 }
 
-static void test_parallel() {
+static void parallel() {
 	std::println("\n== Parallel ==");
 
 	std::print("  strings.join_par.print: ");
@@ -218,23 +218,23 @@ int main() {
 
 	std::println();
 
-	test_filter();
-	test_count();
-	test_split();
-	test_split_fast();
-	test_map();
-	test_optionals();
-	test_one_value();
-	test_concat_sum();
-	test_link_monad();
-	test_zip_monad();
-	test_join();
-	test_join_with();
-	test_join_split();
-	test_take();
-	test_drop();
-	test_to();
-	test_parallel();
+	filter();
+	count();
+	split();
+	split_fast();
+	map();
+	optionals();
+	one_value();
+	concat_sum();
+	link_monad();
+	zip_monad();
+	join();
+	join_with();
+	join_split();
+	take();
+	drop();
+	to();
+	parallel();
 
 	return 0;
 }

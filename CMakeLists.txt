@@ -7,7 +7,7 @@ project ("monads" LANGUAGES CXX)
 
 set(CMAKE_CXX_MODULE_STD 1)
 
-add_compile_options(/Qpar /Qpar-report:1 /Qvec-report:1)
+#add_compile_options(/Qpar /Qpar-report:1 /Qvec-report:1)
 
 
 add_executable (monad)
