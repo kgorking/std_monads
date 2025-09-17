@@ -117,6 +117,16 @@ static void test_link_monad() {
 	std::println("  ints.link(m): {} ", v);
 }
 
+static void test_zip_monad() {
+	std::println("\n== Zip monads ==");
+	std::print("  ints.zip(opts): ");
+	
+	auto m = as_monad(opts).join();// .map(to_int).unbox();
+	as_monad(ints).join().zip(m).then(putval);
+
+	std::println();
+}
+
 static void test_join() {
 	std::println("\n== Join ==");
 
@@ -174,7 +184,7 @@ static void test_to() {
 	std::println("  ints.concat(ints).join().to<std::vector>(): {}", as_monad(ints).concat(ints).join().to<std::vector>());
 }
 
-/*static void test_async() {
+static void test_async() {
 	std::println("\n== Async ==");
 
 	std::print("  strings.async.print: ");
@@ -185,7 +195,7 @@ static void test_to() {
 	as_monad(opts).join().async().map(to_int).then([&sum](int c) { sum += c; });
 	std::println("  opts.async.map(to_int).sum: {}", sum.load());
 	std::println("  opts.      map(to_int).sum: {}", as_monad(opts).join().map(to_int).sum());
-}*/
+}
 
 static void test_parallel() {
 	std::println("\n== Parallel ==");
@@ -204,7 +214,7 @@ static void test_parallel() {
 int main() {
 	std::println("ints: {}", ints);
 	std::println("strings: {}", strings);
-	std::println("optionals: {}", as_monad(opts).join().value_or("<>"sv).to<std::vector>());
+	std::println("optionals: {}", as_monad(opts).join().value_or("<empty>"sv).to<std::vector>());
 
 	std::println();
 
@@ -217,6 +227,7 @@ int main() {
 	test_one_value();
 	test_concat_sum();
 	test_link_monad();
+	test_zip_monad();
 	test_join();
 	test_join_with();
 	test_join_split();
