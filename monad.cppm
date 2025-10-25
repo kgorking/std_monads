@@ -3,30 +3,31 @@ module;
 export module monad;
 import std;
 
-#ifdef __cpp_deleted_function
+#if 0//def __cpp_deleted_function
 #define REASON(x) (x)
 #else
 #define REASON(x)
 #endif
 
-template<typename T> concept range_like    = requires(T rng) { std::ranges::begin(rng); std::ranges::end(rng); };
+template<typename T> concept range_like = requires(T rng) { std::ranges::begin(rng); std::ranges::end(rng); };
 template<typename T> concept optional_like = requires(T opt) { opt.has_value(); opt.value(); };
 template<typename T> concept expected_like = optional_like<T> && requires(T exp) { exp.error(); };
-template<typename F> concept function_like = std::invocable<F, decltype([]<typename T>(T const&) { return true; }) > ;
+//template<typename F> concept function_like = std::invocable < F, decltype([]<typename T>(T const&) { return true; }) > ;
 
+#ifdef _MSC_VER
 #pragma warning(disable : 4324)
+#endif
 template<typename T>
 struct alignas(std::hardware_destructive_interference_size) thread_data {
 	T data;
 	std::size_t id = 0;
 	std::binary_semaphore sema{ 0 };
-	std::future<void> future;
-	char _pad[std::hardware_destructive_interference_size - sizeof(std::size_t) - sizeof(bool) - sizeof(std::binary_semaphore) - sizeof(std::future<void>)]{};
+	std::future<void> future{};
 };
 
 template<typename Container, typename T>
 	requires requires { typename Container::value_type;  }
-static constexpr void add_to_container(Container& c, T const& v) {
+constexpr void add_to_container(Container& c, T const& v) {
 	if constexpr (std::constructible_from<typename Container::value_type, T>) {
 		if constexpr (requires { c.emplace_back(v); })
 			c.emplace_back(v);
@@ -61,58 +62,81 @@ static constexpr void add_to_container(Container& c, T const& v) {
 }
 
 
-template<typename T>				struct unwrapped    { using type = T; };
+template<typename T>				struct unwrapped { using type = T; };
 template<typename T>				struct unwrapped<std::optional<T>> { using type = T; };
-template<typename T, typename E>	struct unwrapped<std::expected<T,E>> { using type = T; };
-template<typename T>				using  unwrapped_t = typename unwrapped<T>::type;
-
+template<typename T, typename E>	struct unwrapped<std::expected<T, E>> { using type = T; };
+template<typename T>				using  unwrapped_t = unwrapped<T>::type;
 
 template<typename T>
-static constexpr bool has_value(T const& v) noexcept {
+constexpr bool has_value(T const& v) noexcept {
 	if constexpr (optional_like<T>)
 		return v.has_value();
 	else
 		return true;
 }
 template<typename T>
-static constexpr decltype(auto) unwrap(T&& v) noexcept {
-	if constexpr (optional_like<T>)
+constexpr decltype(auto) unwrap(T&& v) noexcept {
+	if constexpr (optional_like<T>) {
+		//[[assume(v.has_value())]];
 		return std::forward<T>(v).value();
+	}
 	else
 		return std::forward<T>(v);
 }
+template<typename T, typename Fn>
+constexpr decltype(auto) unwrap_then(T&& v, Fn&& fn) noexcept {
+	if constexpr (optional_like<T>) {
+		if (v.has_value())
+			std::forward<Fn>(fn)(std::forward<T>(v).value());
+	}
+	else
+		std::forward<Fn>(fn)(std::forward<T>(v));
+}
 template<typename T>
-static constexpr decltype(auto) unwrap_or(T&& v, auto const val) noexcept {
+constexpr decltype(auto) unwrap_or(T&& v, auto const val) noexcept {
 	if constexpr (optional_like<T>)
 		return std::forward<T>(v).value_or(val);
 	else
 		return std::forward<T>(v);
 }
 
-template<typename UserFn, typename ...Args>
-concept must_return_void = std::is_same_v<void, std::invoke_result_t<UserFn, Args...>>;
+template<typename Fn, typename T, typename ...Args>
+constexpr decltype(auto) call(Fn&& fn, T const& v, Args&& ...args) {
+	if constexpr (requires {std::tuple_size<unwrapped_t<T>>::value == 0; })
+		return std::apply(fn, std::tuple_cat(unwrap(v), std::make_tuple(std::forward<Args>(args)...)));
+	else
+		return std::invoke(fn, unwrap(v), std::forward<Args>(args)...);
+}
+
+template<typename Fn, typename T, typename ...Args>
+concept callable = requires(Fn && fn, T const& v, Args&& ...args) {
+	{ call(std::forward<Fn>(fn), unwrap(v), std::forward<Args>(args)...) };
+};
+
+template<typename Fn, typename T, typename ...Args>
+using callable_result_t = std::remove_cvref_t<decltype(call(std::declval<Fn>(), std::declval<unwrapped_t<T>>(), std::declval<Args>()...))>;
+
+template<typename UserFn, typename T, typename ...Args>
+concept must_return_void = std::is_same_v<void, callable_result_t<UserFn, T, Args...>>;
 
 
-export template<typename T, function_like Fn>
+export template<typename T, typename Fn>
 class monad {
 	Fn fn;
 
-	// Allow acces to private constructor of other monads
-	template<typename, function_like>
+	// Allow access to private constructor of other monads
+	template<typename, typename InFn>
 	friend class monad;
 
-	// Allow acces to 'as_monad' function
-	template<typename MT>
-	friend constexpr auto as_monad(MT const&) noexcept;
+	// Allow access to 'as_monad' function
+	template<typename Mt> friend constexpr auto as_monad(Mt const&) noexcept;
+	template<typename InitT>  friend constexpr auto as_monad(std::initializer_list<InitT>) noexcept;
 
 	// This function does nothing. Good for reference.
 	constexpr auto identity() const {
 		auto f = [=, fn = fn](auto dst) {
 			bool const retval = fn([=](auto const& v) {
-				if (has_value(v)) {
-					dst(unwrap(v));
-				}
-				return true;
+				unwrap_then(v, dst);
 				});
 
 			return retval;
@@ -121,11 +145,12 @@ class monad {
 		return monad<unwrapped_t<T>, F>{std::move(f)};
 	}
 
-	constexpr explicit monad(Fn&& fn) : fn(std::forward<Fn>(fn)) {}
+	constexpr explicit monad(Fn&& in_fn) : fn(std::forward<Fn>(in_fn)) {}
 public:
 	// Disable construction and assignment
 	monad() = delete REASON("Use 'as_monad()'");
-	monad(auto const& val) = delete REASON("Use 'as_monad()'");
+
+	explicit monad(auto const& val) = delete REASON("Use 'as_monad()'");
 	monad(monad const&) = delete REASON("No");
 	monad(monad&&) = delete REASON("No");
 	void operator=(monad const&) = delete REASON("No");
@@ -133,19 +158,20 @@ public:
 
 	// Apply a filter predicate to the monad.
 	// The predicate must be callable with the unwrapped type of T.
-	constexpr auto filter(std::predicate<unwrapped_t<T>> auto pred) const {
+	template<typename Pred>
+		requires callable<Pred, unwrapped_t<T>>&& std::is_same_v<bool, callable_result_t<Pred, unwrapped_t<T>>>
+	constexpr auto filter(Pred pred) const {
 		auto f = [=, fn = fn](auto dst) {
 			return fn([=](const auto& v) {
 				if (has_value(v)) {
-					const auto& uv = unwrap(v);
-					if (std::invoke(pred, uv))
+					if (const auto& uv = unwrap(v); call(pred, uv))
 						dst(uv);
 				}
 				});
 			};
 		using F = decltype(f);
 		using Filter = monad<unwrapped_t<T>, F>;
-		return Filter{std::move(f)};
+		return Filter{ std::move(f) };
 	}
 
 	template<typename TypeHack = std::conditional_t<std::is_class_v<T>, T, std::nullopt_t>>
@@ -155,7 +181,7 @@ public:
 			return fn([&](const auto& v) {
 				if (has_value(v)) {
 					unwrapped_t<T> const& uv = unwrap(v);
-					if (std::invoke(predicate, uv))
+					if (call(predicate, uv))
 						dst(uv);
 				}
 				});
@@ -167,21 +193,22 @@ public:
 	// Map the current type T to another type using the provided mapping function.
 	// Additional arguments can be passed to the mapping function.
 	template<typename MapFn, typename ...Args>
-		requires std::invocable<MapFn, unwrapped_t<T>, Args...>
+		requires callable<MapFn, unwrapped_t<T>, Args...>
 	constexpr auto map(MapFn const& mf, Args&& ...args) const {
 		auto f = [=, fn = fn, ...args = std::forward<Args>(args)](auto dst) {
 			return fn([=](auto const& v) {
-				if (has_value(v))
-					dst(std::invoke(mf, unwrap(v), args...));
+				if (has_value(v)) {
+					dst(call(mf, unwrap(v), args...));
+				}
 				});
 			};
 		using F = decltype(f);
-		return monad<std::invoke_result_t<MapFn, unwrapped_t<T>, Args...>, F> {std::move(f)};
+		return monad<callable_result_t<MapFn, unwrapped_t<T>, Args...>, F> {std::move(f)};
 	}
 
-	// Extract the N'th element from a tuple-like type.
-	template<int N>
-		requires (N >= 0 && N < std::tuple_size_v<unwrapped_t<T>>)
+	// Extract the Nth element from a tuple-like type.
+	template<std::size_t N>
+		requires (N < std::tuple_size<unwrapped_t<T>>::value)
 	constexpr auto element() const {
 		auto f = [=, fn = fn](auto dst) {
 			return fn([=](auto const& v) {
@@ -196,12 +223,12 @@ public:
 	}
 
 	// If the type is a tuple of at least two elements, return the first element
-	constexpr auto keys() const requires (std::tuple_size_v<unwrapped_t<T>> >= 2) {
+	constexpr auto keys() const requires (std::tuple_size<unwrapped_t<T>>::value >= 2) {
 		return element<0>();
 	}
 
 	// If the type is a tuple of at least two elements, return the second element
-	constexpr auto values() const requires (std::tuple_size_v<unwrapped_t<T>> >= 2) {
+	constexpr auto values() const requires (std::tuple_size<unwrapped_t<T>>::value >= 2) {
 		return element<1>();
 	}
 
@@ -210,10 +237,9 @@ public:
 	constexpr auto concat(Ts const&... ts) const {
 		auto make_fn = [](auto const& v) {
 			return [&v](auto dst) {
-				if (has_value(v))
-					dst(unwrap(v));
+				unwrap_then(v, dst);
 				};
-		};
+			};
 
 		auto f = [fn = fn, ...fns = make_fn(ts)](auto dst) {
 			fn(dst);
@@ -228,8 +254,7 @@ public:
 	constexpr auto prefix(Ts const&... ts) const {
 		auto make_fn = [](auto const& v) {
 			return [&v](auto dst) {
-				if (has_value(v))
-					dst(unwrap(v));
+				unwrap_then(v, dst);
 				};
 			};
 
@@ -254,7 +279,7 @@ public:
 
 	// ...
 	template<typename OtherT, typename OtherFn>
-	constexpr auto cartesion_product(monad<OtherT, OtherFn> const& m) const {
+	constexpr auto cartesian_product(monad<OtherT, OtherFn> const& m) const {
 		auto f = [fn = fn, &m](auto dst) {
 			m.fn([=](auto const& v_outer) {
 				fn([=](auto const& v_inner) {
@@ -315,7 +340,7 @@ public:
 					auto it = std::next(std::ranges::begin(uv), first);
 					auto const end = std::ranges::end(uv);
 
-					for (std::int64_t i = 0; i < take && it != end; ++i, it++) {
+					for (std::int64_t i = 0; i < take && it != end; ++i, ++it) {
 						dst(*it);
 					}
 				}
@@ -332,7 +357,7 @@ public:
 			return fn([=](auto const& v) {
 				if (has_value(v)) {
 					auto const& uv = unwrap(v);
-					std::for_each(std::execution::par, std::ranges::begin(uv), std::ranges::end(uv), [&](auto const& item) {
+					std::for_each(std::execution::par, std::ranges::begin(uv), std::ranges::end(uv), [dst](auto const& item) {
 						dst(item);
 						});
 				}
@@ -345,14 +370,14 @@ public:
 	}
 
 	// Flattens a contained range-like type into a sequence of its elements, in parallel.
-	constexpr auto join_par(std::int64_t const drop, std::int64_t const take) const requires range_like<unwrapped_t<T>> && std::ranges::sized_range<unwrapped_t<T>> {
+	constexpr auto join_par(std::int64_t const drop, std::int64_t const take) const requires range_like<unwrapped_t<T>>&& std::ranges::sized_range<unwrapped_t<T>> {
 		auto f = [=, fn = fn](auto dst) {
 			return fn([=](auto const& v) {
 				if (has_value(v)) {
 					auto const& uv = unwrap(v);
-					int const begin = std::max(0ll, drop);
+					std::int64_t const begin = std::max(0ll, drop);
 					std::int64_t const count = std::min(std::ranges::ssize(uv) - begin, take);
-					int const end = begin + count;
+					//int const end = begin + count;
 
 					auto it = uv.begin() + begin;
 					std::for_each(std::execution::par, it, it + count, [&](auto const& item) {
@@ -364,12 +389,12 @@ public:
 		using F = decltype(f);
 		using VT = std::ranges::range_value_t<unwrapped_t<T>>;
 		using MonadJoin = monad<VT, F>;
-		return MonadJoin{std::move(f)};
+		return MonadJoin{ std::move(f) };
 	}
 
 	// Joins a contained range-like type into a sequence of its elements, separated by the provided pattern.
 	template<typename P>
-		requires range_like<unwrapped_t<T>> && std::is_same_v<P, unwrapped_t<std::ranges::range_value_t<unwrapped_t<T>>>>
+		requires range_like<unwrapped_t<T>>&& std::is_same_v<P, unwrapped_t<std::ranges::range_value_t<unwrapped_t<T>>>>
 	constexpr auto join_with(P&& pattern, std::int64_t drop = 0, std::int64_t take = std::numeric_limits<std::int64_t>::max()) const {
 		auto f = [=, fn = fn](auto dst) {
 			return fn([=](auto const& v) {
@@ -378,13 +403,16 @@ public:
 					if (uv.empty())
 						return;
 
-					int const begin = std::max(0ll, drop);
+					std::int64_t const begin = std::max(0ll, drop);
 					std::int64_t const count = std::min(std::ranges::ssize(uv) - begin, take);
-					int const end = begin + count - 1;
-					for (int i = begin; i < end; ++i) {
-						dst(uv[i]);
+
+					auto it = uv.begin() + begin;
+					auto const end = it + count - 1;
+					for (; it != end; ++it) {
+						dst(*it);
 						dst(pattern);
 					}
+
 					dst(uv.back());
 				}
 				});
@@ -393,13 +421,40 @@ public:
 		using F = decltype(f);
 		using VT = std::ranges::range_value_t<unwrapped_t<T>>;
 		using JoinWith = monad<VT, F>;
-		return JoinWith{std::move(f)};
+		return JoinWith{ std::move(f) };
 	}
 
 	// Joins a contained range-like type into a sequence of its elements, separated by the provided pattern.
-	template<int S>
+	template<std::size_t S>
 	constexpr auto join_with(const char(&pattern)[S], std::int64_t drop = 0, std::int64_t take = std::numeric_limits<std::int64_t>::max()) const {
 		return join_with(std::string_view{ pattern }, drop, take);
+	}
+
+	// Joins a contained range-like type into a sequence of its elements, while replacing a single element.
+	template<typename P>
+		requires range_like<unwrapped_t<T>>&& std::is_same_v<P, unwrapped_t<std::ranges::range_value_t<unwrapped_t<T>>>>
+	constexpr auto replace(P const pattern, P const replace) const {
+		auto f = [=, fn = fn](auto dst) {
+			return fn([=](auto const& v) {
+				if (has_value(v)) {
+					auto const& uv = unwrap(v);
+					if (uv.empty())
+						return;
+
+					std::for_each(std::ranges::begin(uv), std::ranges::end(uv), [dst, pattern, replace](auto const& item) {
+						if (item == pattern)
+							dst(replace);
+						else
+							dst(item);
+						});
+				}
+				});
+			};
+
+		using F = decltype(f);
+		using VT = std::ranges::range_value_t<unwrapped_t<T>>;
+		using JoinWith = monad<VT, F>;
+		return JoinWith{ std::move(f) };
 	}
 
 	// Drop the first 'n' elements from a contained range-like type.
@@ -415,7 +470,7 @@ public:
 	// Split the incoming sequence into parts, separated by the provided delimiter.
 	template<typename D>
 	constexpr auto split(D const delimiter) const {
-		static_assert(std::is_same<unwrapped_t<T>, D>::value, "Input type 'T' and delimiter type 'D' are not comparable; maybe call 'join()' before this function?");
+		static_assert(std::is_same_v<unwrapped_t<T>, D>, "Input type 'T' and delimiter type 'D' are not comparable; maybe call 'join()' before this function?");
 
 		constexpr bool use_string_as_container = std::same_as<T, char>;
 		using Container = std::conditional_t<use_string_as_container, std::basic_string<T>, std::vector<T>>;
@@ -444,8 +499,7 @@ public:
 	}
 
 	// Split the incoming sequence into parts, separated by the provided delimiter. Faster than 'split', but requires a maximum size for each part.
-	template<int MaxSplitSize, typename D>
-		requires (MaxSplitSize > 0)
+	template<std::size_t MaxSplitSize, typename D>
 	constexpr auto split_fast(D const delimiter) const {
 		static_assert(std::is_same_v<unwrapped_t<T>, D>, "Input type 'T' and delimiter type 'D' are not comparable; maybe call 'join()' before this function?");
 
@@ -476,7 +530,7 @@ public:
 			};
 		using F = decltype(f);
 		using MonadSplitFast = monad<View, F>;
-		return MonadSplitFast{std::move(f)};
+		return MonadSplitFast{ std::move(f) };
 	}
 
 	// Repeat each element N times.
@@ -486,8 +540,7 @@ public:
 				int const n = N;
 				if constexpr (optional_like<T>) {
 					for (int i = 0; i < n; ++i) {
-						if (has_value(v))
-							dst(unwrap(v));
+						unwrap_then(v, dst);
 					}
 				}
 				else {
@@ -507,18 +560,18 @@ public:
 	}
 
 	// Convert the contained type to another type, if possible.
-	template<typename Cast>
-		requires std::constructible_from<Cast, unwrapped_t<T>>
-			  || std::constructible_from<Cast, std::from_range_t, unwrapped_t<T>>
-	constexpr auto as() const {
-		auto f = [=, fn = fn](auto dst) {
+	template<typename Cast, typename... Args>
+		requires std::constructible_from<Cast, unwrapped_t<T>, Args...>
+	|| std::constructible_from<Cast, std::from_range_t, unwrapped_t<T>, Args...>
+		constexpr auto as(Args&& ...args) const {
+		auto f = [=, fn = fn, ...args = std::forward<Args>(args)](auto dst) {
 			return fn([=](auto const& v) {
 				if (has_value(v)) {
 					if constexpr (std::constructible_from<Cast, unwrapped_t<T>>) {
-						dst(Cast{ unwrap(v) });
+						dst(Cast{ unwrap(v), args... });
 					}
 					else {
-						dst(Cast{ std::from_range, unwrap(v) });
+						dst(Cast{ std::from_range, unwrap(v), args... });
 					}
 				}
 				});
@@ -527,7 +580,7 @@ public:
 		return monad<Cast, F>{std::move(f)};
 	}
 
-	  // Project values from a type into a tuple of values.
+	// Project values from a type into a tuple of values.
 	template<typename ...Projs>
 	constexpr auto project(Projs const ...projs) const {
 		auto f = [=, fn = fn](auto dst) {
@@ -558,7 +611,7 @@ public:
 		return monad<typename T::value_type, F>{std::move(f)};
 	}
 
-	// If the type is an std::expected, call the provided error handler if no value is present.
+	// If the type is a std::expected, call the provided error handler if no value is present.
 	constexpr auto unexpected(auto err_handler) const requires expected_like<T> {
 		auto f = [=, fn = fn](auto dst) {
 			return fn([=](auto const& v) {
@@ -574,13 +627,13 @@ public:
 
 	// Call the provided function with the unwrapped value, if a value is present. Does not change the type of the monad.
 	template<typename UserFn, typename ...Args>
-		requires must_return_void<UserFn, unwrapped_t<T>, Args...>
+	//requires must_return_void<UserFn, unwrapped_t<T>, Args...>
 	constexpr auto and_then(UserFn&& user_fn, Args&& ...args) const {
-		auto f = [user_fn = std::forward<UserFn>(user_fn), &...args = std::forward<Args>(args), fn = fn](auto dst) {
+		auto f = [user_fn = std::forward<UserFn>(user_fn), ...args = std::forward<Args>(args), fn = fn](auto dst) {
 			return fn([&](auto const& v) {
 				if (has_value(v)) {
 					unwrapped_t<T> const& ub = unwrap(v);
-					std::invoke(user_fn, ub, std::forward<Args>(args)...);
+					call(user_fn, ub, args...);
 					dst(ub);
 				}
 				});
@@ -593,9 +646,7 @@ public:
 	constexpr auto unbox() const requires optional_like<T> {
 		auto f = [=, fn = fn](auto dst) {
 			return fn([=](auto const& v) {
-				if (has_value(v)) {
-					dst(unwrap(v));
-				}
+				unwrap_then(v, dst);
 				});
 			};
 		using F = decltype(f);
@@ -609,7 +660,7 @@ public:
 		auto f = [=, fn = fn, eh = std::forward<ExceptionHandler>(exception_handler)](auto dst) {
 			fn([=](auto const& v) {
 				try {
-					dst(v);
+					unwrap_then(v, dst);
 				}
 				catch (Exception const& e) {
 					std::invoke(eh, e);
@@ -628,7 +679,7 @@ public:
 		return monad<T, F>{std::move(f)};
 	}
 
-	// This requires data that takes a while to process, in order to be worthwile.
+	// This requires data that takes a while to process, in order to be worthwhile.
 	auto async(std::size_t num_threads = std::thread::hardware_concurrency()) const {
 		if (num_threads > std::thread::hardware_concurrency())
 			num_threads = std::thread::hardware_concurrency();
@@ -745,7 +796,7 @@ public:
 	}
 
 	// Sums up the values in the monad.
-	template <typename I = typename std::ranges::range_value_t<unwrapped_t<T>>>
+	template <typename I = std::int64_t>
 		requires std::ranges::range<unwrapped_t<T>>
 	constexpr auto sum(I init = I{}) const {
 		fn([&](auto const& v) {
@@ -830,9 +881,9 @@ public:
 
 	// Sends the final projected values to a new container of the provided template type and returns the container.
 	template<template<class...> typename C, typename ...Projs>
-		requires (sizeof...(Projs) > 0 && requires { C<std::remove_cvref_t<std::invoke_result_t<Projs, T>>...>{}; })
+		requires (sizeof...(Projs) > 0 && requires { C<std::remove_cvref_t<std::invoke_result_t<Projs, unwrapped_t<T>>>...>{}; })
 	constexpr auto to(Projs ...projs) const {
-		C<std::remove_cvref_t<std::invoke_result_t<Projs, T>>...> c;
+		C<std::remove_cvref_t<std::invoke_result_t<Projs, unwrapped_t<T>>>...> c;
 
 		fn([&](auto const& v) {
 			if (has_value(v))
@@ -847,8 +898,18 @@ public:
 export template<typename T>
 constexpr auto as_monad(T const& val) noexcept {
 	auto f = [&val](auto dst) {
-		if (has_value(val))
-			dst(unwrap(val));
+		unwrap_then(val, dst);
+		};
+
+	using Fn = decltype(f);
+	return ::monad<T, Fn>{ std::move(f) };
+}
+
+export template<typename T>
+constexpr auto as_monad(std::initializer_list<T> const vals) noexcept {
+	auto f = [vals](auto dst) {
+		for (auto const& val : vals)
+			unwrap_then(val, dst);
 		};
 
 	using Fn = decltype(f);
