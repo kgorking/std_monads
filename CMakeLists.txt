@@ -1,14 +1,17 @@
 ﻿cmake_minimum_required (VERSION 3.31)
 
 # https://github.com/Kitware/CMake/blob/v3.31.6/Help/dev/experimental.rst
-set(CMAKE_EXPERIMENTAL_CXX_IMPORT_STD "0e5b6991-d74f-4b3d-a41c-cf096e0b2508")
+set(CMAKE_EXPERIMENTAL_CXX_IMPORT_STD "d0edc3af-4c50-42ea-a356-e2862fe7a444")
 
-project ("monads" LANGUAGES CXX)
-
+set(CMAKE_CXX_MODULE_STD ON)
+set(CMAKE_CXX_STANDARD 23)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_MODULE_STD 1)
 
 #add_compile_options(/Qpar /Qpar-report:1 /Qvec-report:1)
 
+
+project ("monads" LANGUAGES CXX)
 
 add_executable (monad)
 target_compile_features(monad PRIVATE cxx_std_23) 
