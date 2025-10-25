@@ -298,33 +298,46 @@ public:
 	constexpr auto zip(monad<OtherT, OtherFn> const& m) const {
 		auto f = [fn = fn, &m](auto dst) -> void {
 			OtherT right{};
-			std::binary_semaphore sema_left{ 0 };
-			std::binary_semaphore sema_right{ 1 };
+			std::binary_semaphore sema_left{ 1 };
+			std::binary_semaphore sema_right{ 0 };
 			std::atomic_bool done = false;
 
+			// A thread is used to produce the right-hand side values.
 			std::jthread t{ [&]() {
 				m.fn([&](OtherT const& v_right) {
 					if (done) return;
 
 					if (has_value(v_right)) {
-						sema_right.acquire();
+						// Wait for the left-hand side to be ready.
+						sema_left.acquire();
+
 						right = v_right;
-						sema_left.release();
+
+						// Signal that the right-hand side value is ready.
+						sema_right.release();
 					}
 					});
 				done = true;
 				} };
 
+			// The main thread produces the left-hand side values.
 			fn([&](auto const& v_left) {
 				if (done) return;
 
-				sema_left.acquire();
-				if (has_value(v_left) /*&& has_value(right)*/) {
+				if (has_value(v_left)) {
+					// Wait for the right-hand side to be ready.
+					sema_right.acquire();
+
 					dst(std::make_tuple(unwrap(v_left), unwrap(right)));
+
+					// Signal that the left-hand side value has been consumed.
+					sema_left.release();
 				}
-				sema_right.release();
 				});
+
+			// Signal the right-hand side thread to finish.
 			done = true;
+			sema_left.release();
 			};
 		using F = decltype(f);
 		return monad<std::tuple<unwrapped_t<T>, unwrapped_t<OtherT>>, F>{std::move(f)};
