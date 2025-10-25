@@ -7,6 +7,7 @@ constexpr auto is_odd = [](int i) { return i % 2 != 0; };
 constexpr auto add_three = [](int v) { return v + 3; };
 constexpr auto mul_two = [](int v) { return v * 2; };
 const     auto putval = [](auto const& val) { std::print("{} ", val); };
+const     auto putvalln = [](auto const& val) { std::println("{}", val); };
 const     auto puterr = [](std::errc val) { std::print("*{}* ", std::make_error_condition(val).message()); };
 
 static std::expected<int, std::errc> to_int(std::string_view sv) {
@@ -184,6 +185,13 @@ static void to() {
 	std::println("  ints.concat(ints).join().to<std::vector>(): {}", as_monad(ints).concat(ints).join().to<std::vector>());
 }
 
+static void cartesion_product() {
+	std::println("\n== Cartesion product ==");
+
+	std::println("  strings.cartesion_product(ints): ");
+	as_monad(strings).join().cartesian_product(as_monad(ints).join()).then(putvalln);
+}
+
 static void async() {
 	std::println("\n== Async ==");
 
@@ -206,9 +214,12 @@ static void parallel() {
 	std::println();
 
 	std::atomic<std::size_t> sum = 0;
-	as_monad(opts).join().map(to_int).then([&sum](int c) { sum += c; });
-	std::println("  opts.async.map(to_int).sum: {}", sum.load());
-	std::println("  opts.      map(to_int).sum: {}", as_monad(opts).join().map(to_int).sum());
+	as_monad(opts).join_par().map(to_int).then([&sum](int c) { sum += c; });
+	std::println("  opts.join_par.map(to_int).sum: {}", sum.load());
+	std::println("  opts.join    .map(to_int).sum: {}", as_monad(opts).join().map(to_int).sum());
+}
+
+static void generate() {
 }
 
 int main() {
@@ -234,7 +245,10 @@ int main() {
 	take();
 	drop();
 	to();
+	cartesion_product();
+	async();
 	parallel();
+	generate();
 
 	return 0;
 }
